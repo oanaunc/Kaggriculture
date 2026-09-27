@@ -468,12 +468,40 @@ def _format_action_span(start_action_num: int | None, end_action_num: int | None
     return f"{start_action_num}-{end_action_num}"
 
 
+# Vision tokens for one attached board image (64x64 grid upscaled 4x = 256x256 px;
+# Qwen-VL merges 2x2 of 16px patches -> ~64 tokens). Keep a generous margin.
+_IMAGE_TOKEN_ESTIMATE = _get_env_int("DUCK_IMAGE_TOKEN_ESTIMATE", 320)
+
+
+def _strip_image_payloads(value: Any) -> tuple[Any, int]:
+    """Replace inline image data with a placeholder and count the images."""
+    if isinstance(value, dict):
+        if value.get("type") == "image_url":
+            return {"type": "image_url"}, 1
+        count = 0
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            out[key], n = _strip_image_payloads(item)
+            count += n
+        return out, count
+    if isinstance(value, list):
+        count = 0
+        items = []
+        for item in value:
+            stripped, n = _strip_image_payloads(item)
+            items.append(stripped)
+            count += n
+        return items, count
+    return value, 0
+
+
 def _estimate_tokens(value: Any) -> int:
+    value, images = _strip_image_payloads(value)
     try:
         rendered = json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
     except TypeError:
         rendered = str(value)
-    return max(1, (len(rendered) + 2) // 3)
+    return max(1, (len(rendered) + 2) // 3 + images * _IMAGE_TOKEN_ESTIMATE)
 
 
 def _host_accessible_base_url(base_url: str) -> str:
@@ -1153,12 +1181,19 @@ class ToolAgent:
         if summary.get("level_transition"):
             # Mechanics usually carry over between levels: keep what was learned as
             # verified-on-previous-level notes instead of discarding it.
-            solved_level = summary.get("level")
+            try:
+                # summary["level"] is the level reached after the transition.
+                solved_level = max(1, int(summary.get("level")) - 1)
+            except (TypeError, ValueError):
+                solved_level = None
             carried = []
             if knowledge.get("goal_model"):
                 carried.append(f"goal that solved the previous level: {knowledge['goal_model']}")
             if knowledge.get("action_model"):
                 carried.append(f"action effects: {knowledge['action_model']}")
+            winning = [str(a) for a in (summary.get("executed_actions") or []) if str(a).strip()]
+            if winning:
+                carried.append(f"final actions that completed level {solved_level or '?'}: {', '.join(winning[-6:])}")
             if carried:
                 note = "; ".join(carried)
                 previous = knowledge.get("cross_level_notes", "")
@@ -1733,7 +1768,38 @@ class ToolAgent:
             trimmed.pop(0)
         return trimmed
 
+    @staticmethod
+    def _drop_stale_images(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Keep the board image only on the newest user message.
+
+        Older frames are still available to the model through `history` in the
+        python tool; re-sending every past image mostly burns context.
+        """
+        last_image_index = None
+        for index, message in enumerate(messages):
+            content = message.get("content")
+            if message.get("role") == "user" and isinstance(content, list) and any(
+                isinstance(part, dict) and part.get("type") == "image_url" for part in content
+            ):
+                last_image_index = index
+        if last_image_index is None:
+            return messages
+        result = []
+        for index, message in enumerate(messages):
+            content = message.get("content")
+            if index != last_image_index and message.get("role") == "user" and isinstance(content, list):
+                texts = [
+                    str(part.get("text", ""))
+                    for part in content
+                    if isinstance(part, dict) and part.get("type") == "text"
+                ]
+                text = "\n".join(texts).replace("\n\nCurrent grid image:", "")
+                message = {**message, "content": text + "\n\n[board image of this older frame omitted]"}
+            result.append(message)
+        return result
+
     def _persistent_history_messages(self, messages: list[dict[str, Any]], *, tools: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        messages = self._drop_stale_images(messages)
         trimmed = self._trim_messages_for_context(messages, tools=tools)
         if not trimmed:
             return []
