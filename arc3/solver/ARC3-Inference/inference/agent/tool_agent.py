@@ -141,6 +141,12 @@ _LOCAL_ANALYZER_TOOL_STEPS = _get_env_int("LOCAL_ANALYZER_TOOL_STEPS", 12)
 _LOCAL_ANALYZER_TOOL_TIMEOUT = _get_env_int("LOCAL_ANALYZER_TOOL_TIMEOUT", 30)
 _LOCAL_ANALYZER_TOOL_OUTPUT_TOKENS = _get_env_int("LOCAL_ANALYZER_TOOL_OUTPUT_TOKENS", 1024)
 _LOCAL_ANALYZER_YIELD_SECONDS = _get_env_float("LOCAL_ANALYZER_YIELD_SECONDS", 0.0)
+# One LLM request takes ~2+ minutes under full concurrency. A 60 s turn budget
+# made nearly every turn end after a single tool call, which re-sent the whole
+# user prompt each time (context churn). Keep yielding, but not mid-investigation.
+_DUCK_MIN_YIELD_SECONDS = _get_env_float("DUCK_MIN_YIELD_SECONDS", 420.0)
+_DUCK_IDLE_TURNS_NUDGE = _get_env_int("DUCK_IDLE_TURNS_NUDGE", 3)
+_DUCK_LEVEL_ACTIONS_NUDGE = _get_env_int("DUCK_LEVEL_ACTIONS_NUDGE", 50)
 _LOCAL_ANALYZER_ENABLE_THINKING = _get_env_bool("LOCAL_ANALYZER_ENABLE_THINKING", True)
 _LOCAL_ANALYZER_TEMPERATURE = _get_env_float("LOCAL_ANALYZER_TEMPERATURE", 0.6)
 _LOCAL_ANALYZER_TOP_P = _get_env_float("LOCAL_ANALYZER_TOP_P", 0.95)
@@ -968,7 +974,13 @@ class ToolAgent:
         self._api_key = str(api_key or "").strip()
         self._tool_steps = None if _LOCAL_ANALYZER_TOOL_STEPS <= 0 else max(1, _LOCAL_ANALYZER_TOOL_STEPS)
         self._python_timeout = min(30, max(1, _LOCAL_ANALYZER_TOOL_TIMEOUT))
-        self._yield_seconds = None if _LOCAL_ANALYZER_YIELD_SECONDS <= 0 else float(_LOCAL_ANALYZER_YIELD_SECONDS)
+        self._yield_seconds = (
+            None
+            if _LOCAL_ANALYZER_YIELD_SECONDS <= 0
+            else max(float(_LOCAL_ANALYZER_YIELD_SECONDS), _DUCK_MIN_YIELD_SECONDS)
+        )
+        self._turns_without_action = 0
+        self._last_action_monotonic = time.monotonic()
         configured_max_output = _LOCAL_ANALYZER_MAX_OUTPUT
         self._max_output_tokens = None if configured_max_output <= 0 else max(1, configured_max_output)
         self._reply_reserve_tokens = self._max_output_tokens or 512
@@ -1235,6 +1247,41 @@ class ToolAgent:
             "- Revise any item above immediately if `current_frame` or `history` contradicts it.",
         ]
 
+    def _progress_nudges(
+        self,
+        current_frame: Frame | None,
+        history_entries: list[HistoryEntry],
+        current_level: int,
+    ) -> list[str]:
+        """Harness-side stuck detection (the model rarely notices it is looping)."""
+        nudges: list[str] = []
+        idle_turns = getattr(self, "_turns_without_action", 0)
+        if _DUCK_IDLE_TURNS_NUDGE > 0 and idle_turns >= _DUCK_IDLE_TURNS_NUDGE:
+            idle_minutes = (time.monotonic() - getattr(self, "_last_action_monotonic", time.monotonic())) / 60.0
+            nudges.append(
+                f"PROGRESS CHECK: {idle_turns} consecutive turns (~{idle_minutes:.0f} min) of analysis without a game action. "
+                "More offline analysis of the same evidence is unlikely to help. This turn, execute the single most informative action "
+                "or a short probe whose outcome discriminates between your hypotheses."
+            )
+        if current_frame is not None and _DUCK_LEVEL_ACTIONS_NUDGE > 0:
+            level_start = None
+            for entry in history_entries:
+                frame = entry.frame
+                if frame is not None and frame.level == current_level:
+                    level_start = frame.step
+                    break
+            if level_start is not None:
+                spent = max(0, current_frame.step - level_start)
+                if spent >= _DUCK_LEVEL_ACTIONS_NUDGE:
+                    nudges.append(
+                        f"STUCK CHECK: {spent} actions spent on level {current_level} without completing it. "
+                        "Your goal model is probably wrong or incomplete. Write down 3 genuinely different hypotheses for the "
+                        "win condition (consider objects you dismissed as HUD/decoration, reference/example panels, actions or "
+                        "targets you have never tried, effects visible only during animations, and what finished earlier levels), "
+                        "then test the cheapest untested one instead of repeating the current approach."
+                    )
+        return nudges
+
     def _build_user_message(self, user_prompt: str, current_frame: Frame | None) -> dict[str, Any]:
         image_part = current_grid_image_part(current_frame)
         if image_part is None:
@@ -1349,6 +1396,7 @@ class ToolAgent:
         )
         lines.extend(self._summarized_knowledge_lines())
         lines.append("end of world model. ")
+        lines.extend(self._progress_nudges(current_frame, history_entries, current_level))
         if action_num == 0:
             lines.append(
                 "Ground yourself in `current_frame` before acting, but start with a compact structural summary rather than restating the full frame."
@@ -2205,6 +2253,11 @@ class ToolAgent:
                 tool_choice=latest_request_tool_choice,
                 transcript="".join(transcript_parts),
             )
+        if step_executed:
+            self._turns_without_action = 0
+            self._last_action_monotonic = time.monotonic()
+        else:
+            self._turns_without_action = getattr(self, "_turns_without_action", 0) + 1
         return AnalyzerTurnResult(
             step_executed=step_executed,
             reasoning=captured_reasoning,
