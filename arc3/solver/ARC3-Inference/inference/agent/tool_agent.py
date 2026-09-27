@@ -147,6 +147,10 @@ _LOCAL_ANALYZER_YIELD_SECONDS = _get_env_float("LOCAL_ANALYZER_YIELD_SECONDS", 0
 _DUCK_MIN_YIELD_SECONDS = _get_env_float("DUCK_MIN_YIELD_SECONDS", 420.0)
 _DUCK_IDLE_TURNS_NUDGE = _get_env_int("DUCK_IDLE_TURNS_NUDGE", 3)
 _DUCK_LEVEL_ACTIONS_NUDGE = _get_env_int("DUCK_LEVEL_ACTIONS_NUDGE", 50)
+# Hidden reasoning is ~95% of generated text. Keeping it for every past turn
+# (preserve_thinking) leaves room for only ~8 turns of history in 32k. Keep it
+# for the newest N assistant turns; notes, tool calls and results stay intact.
+_DUCK_KEEP_REASONING_TURNS = _get_env_int("DUCK_KEEP_REASONING_TURNS", 1)
 _LOCAL_ANALYZER_ENABLE_THINKING = _get_env_bool("LOCAL_ANALYZER_ENABLE_THINKING", True)
 _LOCAL_ANALYZER_TEMPERATURE = _get_env_float("LOCAL_ANALYZER_TEMPERATURE", 0.6)
 _LOCAL_ANALYZER_TOP_P = _get_env_float("LOCAL_ANALYZER_TOP_P", 0.95)
@@ -1846,8 +1850,24 @@ class ToolAgent:
             result.append(message)
         return result
 
+    @staticmethod
+    def _drop_stale_reasoning(messages: list[dict[str, Any]], keep_turns: int) -> list[dict[str, Any]]:
+        if keep_turns < 0:
+            return messages
+        assistant_indices = [i for i, m in enumerate(messages) if m.get("role") == "assistant"]
+        keep = set(assistant_indices[-keep_turns:]) if keep_turns > 0 else set()
+        result = []
+        for index, message in enumerate(messages):
+            if message.get("role") == "assistant" and index not in keep and "reasoning" in message:
+                message = {k: v for k, v in message.items() if k != "reasoning"}
+                if message.get("content") is None and not message.get("tool_calls"):
+                    continue  # reasoning-only turn: nothing left to keep
+            result.append(message)
+        return result
+
     def _persistent_history_messages(self, messages: list[dict[str, Any]], *, tools: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
         messages = self._drop_stale_images(messages)
+        messages = self._drop_stale_reasoning(messages, _DUCK_KEEP_REASONING_TURNS)
         trimmed = self._trim_messages_for_context(messages, tools=tools)
         if not trimmed:
             return []
