@@ -18,8 +18,9 @@ BASE_BUNDLE = Path("/tmp/arc3/src/keith")
 BASE_NOTEBOOK = Path("/tmp/arc3/nb/wuliao0_duck-qwen3-8-anim-base/duck-qwen3-8-anim-base.ipynb")
 OUT = Path("/tmp/arc3/build")
 USER = "oanaunciuleanu"
-DATASET_SLUG = "arc3-duck-ours-src"
-KERNEL_SLUG = "arc3-duck-ours"
+import os
+DATASET_SLUG = os.environ.get("ARC3_DATASET_SLUG", "arc3-duck-ours-src")
+KERNEL_SLUG = os.environ.get("ARC3_KERNEL_SLUG", "arc3-duck-ours")
 RUNTIME_DATASET = "keithtyser/qwen38-flash-next-vllm-nvfp4-runtime-v1"
 MODEL_SOURCE = "keithtyser/qwen3-8-flash-next-nvfp4/PyTorch/radixark-modelopt-fp4/1"
 
