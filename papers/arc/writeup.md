@@ -52,7 +52,7 @@ Public games, one run each (the same model, sampling and budget as the reference
 | Public Duck, run A | 5.78 | 35 | 5 |
 | Public Duck, run B | 6.76 | 36 | 6 |
 | Ours v1 | 6.25 | 33 | 5 |
-| Ours v2 | **[TBD]** | **[TBD]** | **[TBD]** |
+| Ours v2 | 8.04 | 40 | 4 |
 
 ![Levels completed per game](figures/levels_per_game.png)
 
