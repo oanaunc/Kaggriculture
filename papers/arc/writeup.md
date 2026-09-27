@@ -2,7 +2,7 @@
 ### Failure analysis and targeted harness fixes for a small-LLM ARC-AGI-3 agent
 
 > DRAFT — numbers marked **[TBD]** are filled in when the pending leaderboard and evaluation runs finish.
-> Track: ARC-AGI-3. Leaderboard submission ID: 56605759 (v1) **[TBD: final ID]**. Code: public notebook **[TBD link]**.
+> Track: ARC-AGI-3. Leaderboard submission ID: 56605759 (v1, public LB 3.42) **[TBD: final ID]**. Code: public notebook **[TBD link]**.
 
 ## 1. Summary
 
