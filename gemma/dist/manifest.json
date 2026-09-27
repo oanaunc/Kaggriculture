@@ -1,0 +1,92 @@
+{
+  "zip": "/home/user/Kaggriculture/gemma/dist/submission.zip",
+  "sha256": "db1a3a2d469f4ecb1abc34c879680fe1020c3cdc11ea37bf2126ea0f6382f7c2",
+  "zip_bytes": 5132,
+  "entries": [
+    "agent.yaml",
+    "configs/analyzer_sampling.yaml",
+    "configs/sampling.yaml",
+    "eval_config.yaml",
+    "prompts/analyzer.md",
+    "prompts/system.md",
+    "sub_agents/code_analyzer.yaml"
+  ],
+  "files": [
+    "agent.yaml",
+    "configs/analyzer_sampling.yaml",
+    "configs/sampling.yaml",
+    "eval_config.yaml",
+    "prompts/analyzer.md",
+    "prompts/system.md",
+    "sub_agents/code_analyzer.yaml"
+  ],
+  "bytes": 7917,
+  "agents": [
+    {
+      "agent": "swe_coder",
+      "file": "agent.yaml",
+      "tools": [
+        "run_command",
+        "read_file",
+        "edit_file",
+        "write_file",
+        "get_status",
+        "submit_patch",
+        "get_code_neighbors",
+        "get_code_subgraph",
+        "search_similar_code",
+        "agent_tool:code_analyzer"
+      ],
+      "instruction_chars": 4727,
+      "max_output_tokens": 4096,
+      "temperature": 0.2
+    },
+    {
+      "agent": "code_analyzer",
+      "file": "sub_agents/code_analyzer.yaml",
+      "tools": [
+        "run_command",
+        "read_file",
+        "get_code_neighbors"
+      ],
+      "instruction_chars": 1653,
+      "max_output_tokens": 2048,
+      "temperature": 0.1
+    }
+  ],
+  "evaluation": {
+    "timeout_seconds": 300,
+    "max_time_minutes": 4.5,
+    "max_tool_calls": 45,
+    "max_turns": 80
+  },
+  "worst_case_runtime_min": 650,
+  "limit_min": 720,
+  "assumptions": {
+    "tasks": 125,
+    "setup_min_per_task": 0.5,
+    "startup_min": 25
+  },
+  "official": "ok",
+  "root_agent": "swe_coder",
+  "compiled_agents": [
+    "swe_coder",
+    "code_analyzer"
+  ],
+  "root_tools": [
+    "code_analyzer",
+    "edit_file",
+    "get_code_neighbors",
+    "get_code_subgraph",
+    "get_status",
+    "read_file",
+    "run_command",
+    "search_similar_code",
+    "submit_patch",
+    "write_file"
+  ],
+  "rendered_instruction_chars": {
+    "swe_coder": 4743,
+    "code_analyzer": 1669
+  }
+}

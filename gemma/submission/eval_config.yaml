@@ -1,0 +1,10 @@
+# Per-task budgets for Stage 1 (agent phase). Tasks run one after another and
+# the whole run (vLLM start-up + sandbox setup + agent time) must fit in 12 h.
+# Worst case: 120 tasks x (4.5 min agent + ~0.5 min setup) + ~20 min start-up
+# = ~620 min, which leaves ~100 min of margin.
+evaluation:
+  # Also the Phase-2 verification pytest timeout, so keep the harness default.
+  timeout_seconds: 300
+  max_time_minutes: 4.5
+  max_tool_calls: 45
+  max_turns: 80
