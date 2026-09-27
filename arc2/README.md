@@ -193,3 +193,9 @@ It is not a big accuracy jump. The credible accuracy levers from the scouting re
 - The newline token: the base (and ours) uses the correct `"Ċ": 10`.
   - The `"ÄŠ"` mojibake in koushikrudra's fork is a dict *key*, and only `ARC_VOCAB.values()` is used, so even that fork decodes correctly.
   - Our runtime check now verifies the ids against the tokenizer anyway.
+
+## Run log
+
+| Date | Version | Kaggle commit run (4-task check) | Submission ref | Public LB |
+|---|---|---|---|---|
+| 2026-09-27 | v1 | ran cleanly, exit codes [0,0,0,0], model-only = final = 2.5/4 (base 3.0/4; the difference is 36a08778 test 1, found by a single augmented beam in the base run: seed variance) | 56617135 | pending |
