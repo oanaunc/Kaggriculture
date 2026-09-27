@@ -133,6 +133,12 @@ with open("replay.json", "w") as f:
 
 Three built-in agents are available by name: `"pass"`, `"random"`, and `"starter"` (a deterministic baseline).
 
+## Local Validation & Failure Analysis
+
+- The game engine runs locally, so harness changes can be tested offline before any GPU spend.
+- Study the solver's main loop to find the right insertion points for auto-probing and search helpers.
+- Before changing anything, pull the output logs from recent public Duck runs on the 25 public games. This reveals the exact failure modes without spending GPU time.
+
 ## Set Up the Kaggle CLI
 
 Install the CLI:
