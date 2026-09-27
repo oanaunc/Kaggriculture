@@ -112,3 +112,9 @@ It was **not** possible to run the real model on CPU. The first real measurement
 - **`timeout_seconds` in Phase 2.** Whether the Kaggle scorer's Phase 2 reads it is not public (its `metric.py` is not published). 300 equals the default, so this change is neutral in any case.
 - **Noise.** About 60 public-LB tasks means about 0.017 per task, and v1 changes many things at once. A ±0.03 result is within noise; attribute effects only through ablations on the 129 public tasks.
 - **Data freshness.** The hosts re-uploaded the graphs and embeddings on 2026-09-25. The prompt treats graph tools as optional, so broken graph files only cost a wasted call.
+
+## Leaderboard log
+
+| Date | Version | Ref | Public LB | Notes |
+|---|---|---|---|---|
+| 2026-09-27 | v1 | 56606876 | 0.06 | Below the 0.12 public base. Likely causes: thinking off + 4096 output tokens + 4.5 min / 45-call cap cutting tasks short, and heavier prompt rules. v2 rebuilds on the 0.12 config with minimal deltas. |
