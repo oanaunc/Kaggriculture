@@ -223,6 +223,11 @@ def _normalize_summary_text(value: Any, *, max_chars: int | None = 280) -> str:
     return f"{text[:max_chars].rstrip()}... [{omitted} chars omitted]"
 
 
+# A label header at the start of a line, tolerating markdown and qualifiers:
+# "World model:", "**World model (revised):**", "### World model v12:", "World model update -".
+_LABEL_HEADER_RE = re.compile(r"^[#*_`>\s]*([A-Za-z][A-Za-z \-]{2,40}?(?:\s*(?:\([^)]{0,40}\)|v\d+|update[ds]?|revised|updated|\d+))*)[*_`\s]*[:\u2014-]\s*(?=\S|$)")
+
+
 def _extract_labeled_blocks(content: str, labels: list[str]) -> dict[str, str]:
     normalized_labels = {label.lower(): label for label in labels}
     targets = tuple(f"{label.lower()}:" for label in labels)
@@ -232,17 +237,21 @@ def _extract_labeled_blocks(content: str, labels: list[str]) -> dict[str, str]:
     for raw_line in content.splitlines():
         stripped = raw_line.strip()
         candidate = stripped
-        while candidate.startswith(("-", "*")):
+        while candidate.startswith(("-", "*")) and not candidate.startswith("**"):
             candidate = candidate[1:].lstrip()
-        lowered = candidate.lower()
 
         matched_label: str | None = None
         inline_value = ""
-        for target in targets:
-            if lowered.startswith(target):
-                matched_label = normalized_labels[target[:-1]]
-                inline_value = candidate[len(target):].strip()
-                break
+        header = _LABEL_HEADER_RE.match(candidate)
+        if header is not None:
+            head = header.group(1).lower().strip()
+            for label_lower, label in normalized_labels.items():
+                if head == label_lower or (
+                    head.startswith(label_lower) and not head[len(label_lower)].isalnum()
+                ):
+                    matched_label = label
+                    inline_value = candidate[header.end():].strip().strip("*_").strip()
+                    break
 
         if matched_label is not None:
             current_label = matched_label
@@ -1065,6 +1074,12 @@ class ToolAgent:
             "game_over": any(bool(item.get("game_over")) for item in executed_results),
             "board_changed": any(bool(item.get("board_changed")) for item in executed_results),
             "stop_reason": last.get("stop_reason"),
+            "animations": [
+                anim
+                for item in executed_results
+                for anim in (item.get("animations") or [])
+                if isinstance(anim, dict)
+            ][-5:],
         }
 
     def _describe_last_outcome(self, summary: dict[str, Any] | None) -> str:
@@ -1101,6 +1116,22 @@ class ToolAgent:
         if stop_reason:
             pieces.append(f"stop_reason={stop_reason}.")
         return " ".join(pieces)
+
+    def note_auto_reset(self, game_over_count: int = 0) -> None:
+        """Called by the solver after it auto-RESETs a game-over level."""
+        summary = dict(self._last_step_summary or {})
+        summary["game_over"] = False
+        summary["auto_reset"] = True
+        summary["game_over_count"] = game_over_count
+        self._last_step_summary = summary
+        if isinstance(self._last_action_result, dict) and self._last_action_result:
+            result = dict(self._last_action_result)
+            result["game_over"] = False
+            result["done"] = False
+            result["state"] = "NOT_FINISHED"
+            result["auto_reset"] = True
+            result["note"] = "GAME OVER occurred; the harness automatically RESET the level. Keep playing."
+            self._last_action_result = result
 
     def _update_summarized_knowledge_from_assistant(self, content: str) -> None:
         note = _extract_scientist_note(content)
@@ -1231,8 +1262,31 @@ class ToolAgent:
                 lines.append("You have progressed to a new level!")
             else:
                 lines.append("You are still on the same level.")
-            if previous_step_summary.get("game_over"):
+            if previous_step_summary.get("auto_reset"):
+                count = previous_step_summary.get("game_over_count") or 0
+                lines.append(
+                    "The previous sequence ended in GAME OVER"
+                    + (f" (game over #{count} in this run)" if count else "")
+                    + ". The harness has already RESET the level: it restarted from its initial layout and the game is NOT over. Keep playing. "
+                    "Before retrying, identify what caused the loss (step/energy budget bar running out, hazard contact, wrong move) and change the plan."
+                )
+            elif previous_step_summary.get("game_over"):
                 lines.append("The game is over.")
+            animations = previous_step_summary.get("animations")
+            if isinstance(animations, list) and animations:
+                parts = []
+                for item in animations[-3:]:
+                    parts.append(
+                        f"{item.get('action')}: {item.get('intermediate_frames')} intermediate frames, "
+                        f"{item.get('transient_cells')} cells changed only mid-animation in rows "
+                        f"{item.get('transient_bbox_rows')} cols {item.get('transient_bbox_cols')}"
+                        + (" and the board then reverted to the pre-action state" if item.get("final_equals_before") else "")
+                    )
+                lines.append(
+                    "Animation evidence hidden from the final frame: " + "; ".join(parts) + ". "
+                    "An action whose final frame looks unchanged may still have had a real effect (e.g. something moved, flowed or was tested and then reverted); "
+                    "details are in `last_action_result['animations']`."
+                )
         elif (current_frame is not None and current_frame.step > 0) or action_num > 0:
             lines.append("No previous action sequence was captured.")
         else:
@@ -1473,6 +1527,10 @@ class ToolAgent:
                 compact[timing_key] = payload.get(timing_key)
         if payload.get("error"):
             compact["error"] = payload.get("error")
+        if payload.get("animations"):
+            compact["animations"] = payload.get("animations")
+        elif payload.get("animation"):
+            compact["animations"] = [{"action": compact.get("action_display"), **payload["animation"]}]
         return compact
 
     def _run_python_tool(self, state_path: Path, arguments: dict[str, Any]) -> _ToolDispatchResult:

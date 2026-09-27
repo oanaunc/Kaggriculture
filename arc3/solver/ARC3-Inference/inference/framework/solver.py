@@ -98,6 +98,59 @@ def _grid_from_state(state: taaf.game.GameState | None) -> tuple[tuple[int, ...]
     return tuple(tuple(int(cell) for cell in row) for row in rows)
 
 
+def _animation_summary(
+    previous_grid: tuple[tuple[int, ...], ...],
+    state: taaf.game.GameState,
+) -> dict[str, Any] | None:
+    """Summarize changes that only appear in intermediate animation frames.
+
+    The harness shows the model only the final frame of an action. Many games
+    animate the real effect (pours, projectiles, flashes, a failed attempt that
+    reverts) and the final frame hides it, so report transient changes.
+    """
+    try:
+        raw_frames = list(state.raw.frame)
+    except Exception:
+        return None
+    if len(raw_frames) <= 1 or not previous_grid:
+        return None
+    final = _grid_from_state(state)
+
+    def to_grid(data: Any) -> tuple[tuple[int, ...], ...]:
+        rows = data.tolist() if hasattr(data, "tolist") else data
+        return tuple(tuple(int(cell) for cell in row) for row in rows)
+
+    transient: set[tuple[int, int]] = set()
+    max_changed = 0
+    colors: set[int] = set()
+    for data in raw_frames[:-1]:
+        grid = to_grid(data)
+        if len(grid) != len(previous_grid):
+            continue
+        changed = 0
+        for r, (row, prev_row, fin_row) in enumerate(zip(grid, previous_grid, final)):
+            for c, (value, prev, fin) in enumerate(zip(row, prev_row, fin_row)):
+                if value != prev:
+                    changed += 1
+                    if value != fin:
+                        transient.add((r, c))
+                        colors.add(value)
+        max_changed = max(max_changed, changed)
+    if not transient:
+        return None
+    rows = [r for r, _ in transient]
+    cols = [c for _, c in transient]
+    return {
+        "intermediate_frames": len(raw_frames) - 1,
+        "transient_cells": len(transient),
+        "transient_bbox_rows": [min(rows), max(rows)],
+        "transient_bbox_cols": [min(cols), max(cols)],
+        "transient_color_count": len(colors),
+        "max_cells_changed_in_one_frame": max_changed,
+        "final_equals_before": final == previous_grid,
+    }
+
+
 def _level_number(game: taaf.game.Game) -> int:
     state = game.current_state
     completed = int(state.levels_completed)
@@ -655,6 +708,13 @@ class _HarnessGameSession:
             bool(item.get("board_changed")) for item in executed_payloads
         )
         final_payload["stopped_early"] = len(executed_payloads) < batch_size
+        animations = [
+            {"action": item.get("action_display"), **item["animation"]}
+            for item in executed_payloads
+            if isinstance(item.get("animation"), dict)
+        ]
+        if animations:
+            final_payload["animations"] = animations[-5:]
         if stop_reason is not None:
             final_payload["stop_reason"] = stop_reason
         self.write_viewer_payload()
@@ -663,6 +723,15 @@ class _HarnessGameSession:
     def _execute_auto_reset(self) -> None:
         action = arcengine.ActionInput(id=arcengine.GameAction.RESET, data={})
         self._execute_action(action, batch_index=1, batch_size=1, generated_tokens=0)
+        # Without this the analyzer keeps telling the model "The game is over."
+        # (and to stop acting) although the level has already been restarted.
+        notify = getattr(self.analyzer, "note_auto_reset", None)
+        if callable(notify):
+            notify(self._game_over_count_increment())
+
+    def _game_over_count_increment(self) -> int:
+        self.game_over_count = getattr(self, "game_over_count", 0) + 1
+        return self.game_over_count
 
     def _execute_action(
         self,
@@ -728,6 +797,9 @@ class _HarnessGameSession:
             "batch_size": batch_size,
             **self.timing_payload(),
         }
+        animation = None if level_completed else _animation_summary(previous_grid, new_state)
+        if animation is not None:
+            payload["animation"] = animation
         self._append_action_viewer_event(payload, current_frame)
         if flush_viewer_payload:
             self.write_viewer_payload()
