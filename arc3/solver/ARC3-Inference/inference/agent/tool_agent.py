@@ -150,7 +150,7 @@ _DUCK_LEVEL_ACTIONS_NUDGE = _get_env_int("DUCK_LEVEL_ACTIONS_NUDGE", 50)
 # Hidden reasoning is ~95% of generated text. Keeping it for every past turn
 # (preserve_thinking) leaves room for only ~8 turns of history in 32k. Keep it
 # for the newest N assistant turns; notes, tool calls and results stay intact.
-_DUCK_KEEP_REASONING_TURNS = _get_env_int("DUCK_KEEP_REASONING_TURNS", 1)
+_DUCK_KEEP_REASONING_TURNS = _get_env_int("DUCK_KEEP_REASONING_TURNS", -1)  # -1 = keep all (v3 trial with 1 scored worse)
 _LOCAL_ANALYZER_ENABLE_THINKING = _get_env_bool("LOCAL_ANALYZER_ENABLE_THINKING", True)
 _LOCAL_ANALYZER_TEMPERATURE = _get_env_float("LOCAL_ANALYZER_TEMPERATURE", 0.6)
 _LOCAL_ANALYZER_TOP_P = _get_env_float("LOCAL_ANALYZER_TOP_P", 0.95)
