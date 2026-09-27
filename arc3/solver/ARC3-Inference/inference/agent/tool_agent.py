@@ -1114,16 +1114,41 @@ class ToolAgent:
         summary = self._last_step_summary
         if not summary:
             return
-        if summary.get("level_transition") or summary.get("run_complete") or summary.get("game_over"):
-            for key in (
-                "world_model",
-                "goal_model",
-                "action_model",
-                "recent_findings",
-                "open_questions",
-                "current_plan",
-            ):
-                self._summarized_knowledge[key] = ""
+        knowledge = self._summarized_knowledge
+        if summary.get("run_complete"):
+            for key in ("world_model", "goal_model", "action_model", "recent_findings", "open_questions", "current_plan"):
+                knowledge[key] = ""
+            return
+        if summary.get("level_transition"):
+            # Mechanics usually carry over between levels: keep what was learned as
+            # verified-on-previous-level notes instead of discarding it.
+            solved_level = summary.get("level")
+            carried = []
+            if knowledge.get("goal_model"):
+                carried.append(f"goal that solved the previous level: {knowledge['goal_model']}")
+            if knowledge.get("action_model"):
+                carried.append(f"action effects: {knowledge['action_model']}")
+            if carried:
+                note = "; ".join(carried)
+                previous = knowledge.get("cross_level_notes", "")
+                merged = f"{previous} | {note}" if previous else note
+                knowledge["cross_level_notes"] = _normalize_summary_text(merged, max_chars=900)
+            if knowledge.get("action_model"):
+                knowledge["action_model"] = f"(from previous level, re-verify cheaply) {knowledge['action_model']}"
+            for key in ("world_model", "goal_model", "recent_findings", "open_questions", "current_plan"):
+                knowledge[key] = ""
+            self._levels_completed_seen = max(getattr(self, "_levels_completed_seen", 0), int(solved_level or 0))
+            return
+        if summary.get("game_over"):
+            # The level restarts; mechanics are unchanged. Keep the models and mark the plan as failed.
+            failed_plan = knowledge.get("current_plan", "")
+            knowledge["recent_findings"] = _normalize_summary_text(
+                "GAME OVER happened (level restarted). "
+                + (f"The plan that led to it failed: {failed_plan}. " if failed_plan else "")
+                + "Find out what caused the loss (step budget bar, hazard, wrong target) before repeating it.",
+                max_chars=600,
+            )
+            knowledge["current_plan"] = ""
 
     def _summarized_knowledge_lines(self) -> list[str]:
         entries = [
