@@ -1,5 +1,7 @@
 # Gemma 4 Developer Agent: submission v1 ("harness-debt fixes")
 
+> **Status:** v1 scored **0.06** on the public LB, below the 0.12 public reference it was built to improve on. **v2** (`submission_v2/`) goes back to that 0.12 bundle. It is described in [Submission v2](#submission-v2-reproduce-the-012-bundle-plus-three-small-deltas) at the end of this file. The v1 text below is kept unchanged as a record.
+
 This is our first leaderboard submission for `gemma-4-developer-agent`. It keeps the architecture of the best public configuration: a coder agent plus a read-only `code_analyzer` sub-agent. This is the design behind romanrozen's 0.12 and zhukovoleksiy's v2 at 0.10.
 
 What changes is the interface. It fixes failure modes that we confirmed by reading the released harness source (`swegemma 0.2.7`, `adk_submission 0.2.11`, `google-adk 1.36.1`). Several of these failure modes make a task score 0 even when the agent has already written a correct fix. No LoRA is included.
@@ -117,4 +119,111 @@ It was **not** possible to run the real model on CPU. The first real measurement
 
 | Date | Version | Ref | Public LB | Notes |
 |---|---|---|---|---|
-| 2026-09-27 | v1 | 56606876 | 0.06 | Below the 0.12 public base. Likely causes: thinking off + 4096 output tokens + 4.5 min / 45-call cap cutting tasks short, and heavier prompt rules. v2 rebuilds on the 0.12 config with minimal deltas. |
+| 2026-09-27 | v1 | 56606876 | 0.06 | Below the 0.12 public base. Likely causes: 4.5 min / 45-call cap and 4096 output tokens cutting tasks short, plus heavier prompt rules (note: the 0.12 base also runs with thinking off). v2 rebuilds on the 0.12 config with minimal deltas. |
+
+---
+
+# Submission v2: reproduce the 0.12 bundle, plus three small deltas
+
+v1 changed about 15 things at once and scored **0.06**. romanrozen's "GEMMA: EDA, Baseline for a start" bundle (R12) scored **0.12**. v2 goes back to R12 as a byte-exact base. On top of it, v2 adds only three deltas. Each delta targets a failure mode confirmed in the harness source (F1-F4, F9 above) and costs a few prompt lines or one config file.
+
+## Build (no submission was made)
+
+```bash
+/tmp/gemma/venv/bin/python gemma/build.py submission_v2   # -> gemma/dist/submission_v2.zip + dist/submission_v2.manifest.json
+/tmp/gemma/venv/bin/python gemma/build.py                 # v1, unchanged -> dist/submission.zip (same sha256 as before)
+```
+
+The zip contains `agent.yaml`, `configs/sampling.yaml`, `eval_config.yaml`, `prompts/analyzer.md`, `prompts/system.md` and `sub_agents/code_analyzer.yaml`. It is 6 files and 3,854 bytes, with sha256 `e156523b0f57bfe2052190d247b340eeee2c9a67e5597cfac68060ba86f9db60`.
+
+## How the base was reproduced
+
+R12's `.txt` code dump truncates cells, so the base comes from the full `.ipynb` instead. `/tmp/gemma/r12_repro/run_r12.py` runs R12's own cells locally with `GEMMA_AGENT_DATA=/tmp/gemma/data`. It runs cells 3, 5, 7, 10, 12, 38, 41 and 43: CFG, setup, data discovery, README facts, tool verification, the prompt builders, the sample-submission probe and the bundle writer. The plotting and IPython modules are stubbed out.
+
+The run detected all 9 tools, `ARCH=analyzer+coder`, `!include` style and model `gemma-4-31b-it-qat-w4a16-ct`, which match what the notebook would detect on Kaggle. The generated bundle is kept untouched in `/tmp/gemma/r12_base/`. It has 5 files and no `eval_config.yaml`.
+
+R12 as built:
+
+- **Coder** `swe_coder`. Tools: `run_command, read_file, edit_file, write_file, get_status, submit_patch` and `agent_tool: sub_agents/code_analyzer.yaml` (`skip_summarization: true`). It has **no** graph tools.
+- **Analyzer** `code_analyzer`. Tools: `run_command, read_file, search_similar_code, get_code_neighbors, get_code_subgraph`. It answers in a fixed format (at most 250 words): LOCATION / ROOT CAUSE / FIX PLAN / RELATED / TESTS / CONFIDENCE.
+- **Shared `configs/sampling.yaml`.** Values: `temperature 0.2, top_p 0.95, top_k 40, max_output_tokens 8192, thinking_config: {thinking_budget: 4096, include_thoughts: false}`.
+- **Thinking is effectively OFF.** The config is easy to misread as "thinking on with a 4k budget", but it is not. `adk_submission/resolvers/generation.py::apply_thinking_config_to_model` maps `include_thoughts: false` to `chat_template_kwargs.enable_thinking=False`. `thinking_budget` is never forwarded to vLLM (F7). Compiling the v2 tree confirms this for both agents: `extra_body = {'chat_template_kwargs': {'enable_thinking': False}}`. v2 keeps the file byte-identical, so whatever R12 actually ran, v2 runs too.
+- **No `eval_config.yaml`.** The harness defaults therefore apply: 60 min, 100 tool calls, 500 turns and a 300 s command timeout.
+
+## Exact diff vs the 0.12 base (`diff -ru /tmp/gemma/r12_base gemma/submission_v2`)
+
+`agent.yaml`, `sub_agents/code_analyzer.yaml` and `configs/sampling.yaml` are **byte-identical**. That covers the tool lists, the sub-agent wiring, the sampling and the thinking settings. The changes are:
+
+```diff
+--- r12_base/prompts/system.md
++++ submission_v2/prompts/system.md
+@@ Hard rules
+ - Always finish by calling `submit_patch`. A careful best-effort fix beats no patch.
++- Never call `search_similar_code`, `get_code_neighbors` or `get_code_subgraph`, even if the task message lists them: they are not in your tool list, and calling them crashes the session and loses your patch. Search with `grep` via `run_command`, or ask `code_analyzer`.
+@@ Budget discipline
+ - Keep outputs short: pipe through `head`, use `grep -n`, `pytest -q`. Never print whole large files.
++- `run_command` returns only the FIRST 5000 characters of output, but pytest prints its verdict at the END. For test runs and other long output, write to a file and read the tail: `python -m pytest <tests/path> -x -q > /tmp/test.log 2>&1; tail -n 30 /tmp/test.log`.
+
+--- r12_base/prompts/analyzer.md
++++ submission_v2/prompts/analyzer.md
+@@ Tools
+-- `search_similar_code` for concepts the issue describes without naming code
++- Never call `search_similar_code`: its output is unbounded, overflows your context and crashes the session
+
++++ submission_v2/eval_config.yaml   (new file)
++evaluation:
++  timeout_seconds: 300      # = default
++  max_time_minutes: 8       # default 60
++  max_tool_calls: 100       # = default
++  max_turns: 500            # = default
+```
+
+Why each delta exists:
+
+- **(a) Tail idiom, coder only.** `run_command` keeps the *first* 5,000 characters (F1). Plain `pytest -q` on `httpx_3672` printed 7,951 characters, and the pass/fail line fell in the hidden part. R12's own advice to "pipe through `head`" hides the verdict as well. The analyzer never runs tests, so its prompt is unchanged here.
+- **(b) The `search_similar_code` ban.**
+  - **Analyzer.** R12 *recommends* this tool to the analyzer. Its output is uncapped: 136k to 259k characters were measured (F4). The analyzer also has no compaction (F6), so a single call overflows 32k and the exception loses the patch (F2).
+  - **Keeping it registered.** The tool stays in the analyzer's tool list, so the tool schema is identical to R12's. A call to an unregistered name raises `ValueError` and crashes the session in the same way (F3). Removing it would therefore buy nothing and would change the tool surface.
+  - **Coder.** The coder never had any graph tool. The harness's own task message still advertises all three whenever graph files exist (`agent_runner.py` "Code Intelligence Tools"), so a coder call is an unknown-tool crash (F3). The single coder line names all three tools for that reason.
+- **(c) An 8-minute cap.** The reasoning is in the next section.
+
+## Why an 8-minute cap (and not none, and not 4.5)
+
+- **Evidence.** R12 finished inside 12 h with the 60 min / 100 calls / 500 turns defaults and thinking off. A second defaults run (zhukovoleksiy v2, 0.10) also finished. Thinking HIGH with 16k output and a 12-minute cap exceeded 12 h. That failure came from the thinking and sampling setup, not from the cap. 4.5 min / 40 calls scored 0.10 (N). 5 min with the starter prompt scored 0.00, which is a prompt effect. So with thinking off, R12-style trajectories are on average much shorter than the 60-minute cap. The real bound on each task was the 100 tool calls, which include the analyzer's calls (F10).
+- **What v2 changes about runtime.** Delta (b) removes a crash path. A task that used to die quickly on a `search_similar_code` overflow now keeps running, possibly up to the 100-call cap. This is the only way v2 can run longer than R12. Its size is unknown because R12's crash rate is not public. Exceeding 12 h scores nothing for the whole submission.
+- **Decision: `max_time_minutes: 8`, everything else at the defaults.** Container setup is excluded from the agent budget (HARNESS_README §7.1). A task that hits the cap is still graded on its working tree (F9), so the cap costs only fixes that would have landed after minute 8. Those are long, heavily compacted trajectories that rarely resolve. N at 4.5 min still scored 0.10, so even a much tighter cap does not wreck the score. 8 min bounds the extra tail from (b) while leaving R12's typical tasks untouched. 4.5 min (v1) would change R12 behaviour on more tasks and confound the comparison. `max_tool_calls` stays at 100 and `timeout_seconds` at 300, the defaults R12 ran with. `timeout_seconds` may also bound Phase-2 pytest (F8).
+- **The 8-minute cap does not guarantee a finish.** The worst case is 125 × (8 + 0.5) + 25 = 1,088 min, which is more than 720. The defaults' worst case is far larger still, and R12 finished anyway, so the realised mean is what matters. That mean is ≤ R12's mean plus the time recovered from avoided crashes, and each such task is capped at 8 min. For this reason, `build.py` treats the worst-case arithmetic as advisory for `submission_v2` (`WORST_CASE_ADVISORY`) and records it in the manifest; for v1 it remains a hard failure.
+
+## v2 vs v1
+
+| | v1 (0.06) | v2 |
+|---|---|---|
+| Base | Our own rewrite (~1.2k-token prompt) | R12 as generated, byte-exact except the diff above |
+| Coder tools | + `search_similar_code`, `get_code_neighbors`, `get_code_subgraph` (registered, banned by prompt) | R12's: no graph tools; prompt forbids calling them |
+| Analyzer | Bounded: ≤6 calls, 3 tools, its own sampling (T=0.1, 2,048 output tokens), `skip_summarization: false`, called optionally | R12's: unbounded, 5 tools, shared sampling, `skip_summarization: true`, always called first |
+| Sampling | Coder 4,096 output tokens, thinking off | 8,192 output tokens, `thinking_budget 4096` + `include_thoughts: false` (= off) |
+| Prompt extras | `{problem_description?}` injection, TASK/NOTE/PLAN rules, strict submit/get_status rules, exact tool whitelist | None (only deltas a/b) |
+| Budgets | 4.5 min / 45 calls / 80 turns / 300 s | 8 min / 100 calls / 500 turns / 300 s |
+
+The v1 extras are not carried over. v1 bundled all of them and scored half of R12. No ablation shows that any one of them helps, and several of them (4.5 min / 45 calls, 80 turns, halved output tokens, extra per-call rules) shrink the budget R12 used. If they get re-tested, it should be one at a time on top of v2.
+
+## Validation performed
+
+- **Local checks** with `build.py submission_v2`. All local checks pass. The one advisory is the worst-case note explained above.
+- **Official harness checks.** `validate_directory(build_submission_limits())` passes. `validate_single_declared_model` returns the competition model. `compile_submission` gives `swe_coder` → `AgentTool(code_analyzer)` with the tool lists above. ADK `inject_session_state` is a no-op on both instructions: there are no placeholders, and the issue comes from the harness user message, as in R12. The deterministic zip is round-tripped and re-validated.
+- **v1 is unaffected.** `build.py` with no argument still produces the byte-identical `dist/submission.zip` (sha256 `db1a3a2d…`).
+- **CPU dry run.** `tools/dry_run_mock.py` now supports trees whose analyzer prompt starts with "You are `code_analyzer`, a read-only code" and trees without an `eval_config.yaml`. It ran through the real `swegemma.Evaluator` with `--submission gemma/submission_v2` on `httpx_3672`:
+  - The coder was offered its 7 tools and the analyzer its 5.
+  - The `code_analyzer` round trip worked.
+  - `get_status` reported 8.0 min / 100 calls / 500 turns.
+  - The redirect-and-tail pytest command showed the verdict.
+  - `submit_patch` produced 9,719 bytes across 7 files, and Phase 2 reported `resolved: True`.
+  - The trace is in `/tmp/gemma/dryrun_v2/mock_trace.json`.
+  - This tests the plumbing only; the mock applies the gold patch.
+
+## Risks
+
+- **Instructions are not enforcement.** The bans in (b) are prompt lines. An analyzer that ignores them can still overflow, exactly as in R12. The analyzer also keeps R12's other unbounded paths: large `read_file` or grep output, and no compaction (F6).
+- **Noise.** About 60 public-LB tasks means about 0.017 per task. A v2 result anywhere in roughly 0.09-0.15 is consistent with "same as R12". Neither a small gain nor a small loss can be attributed to the deltas from one run.
+- **Runtime.** See the cap reasoning above. If avoided crashes turn into many 8-minute tasks, total time grows. The hard ceiling is 125 × 8 min of agent time plus setup, and the realised mean is expected to be far lower.
+- **Unknown differences from R12's actual run.** The base was regenerated from R12's code on our copy of the data. If Kaggle's copy of the files let R12 detect a different tool set, its uploaded bundle could differ. That is unlikely: all 9 tools appear in `HARNESS_README.md`, which the notebook greps.

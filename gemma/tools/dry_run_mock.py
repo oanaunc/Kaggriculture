@@ -15,6 +15,8 @@ Usage (needs the harness wheels in a py3.12 venv and one snapshot):
   /tmp/gemma/venv/bin/python gemma/tools/dry_run_mock.py \
       --tasks /tmp/gemma/data/tasks.jsonl --snapshots /tmp/gemma/data/snapshots \
       --task-id httpx_3672 --submission gemma/submission --out /tmp/gemma/dryrun \
+      (or --submission gemma/submission_v2; issue_injected is expected False for v2, whose
+       prompts, like the 0.12 base, rely on the harness user message for the issue text) \
       --clean-site-packages /tmp/gemma/sbxenv/lib/python3.12/site-packages
 """
 
@@ -78,7 +80,7 @@ class ScriptedGemma(BaseLlm):
         tools = sorted((llm_request.tools_dict or {}).keys())
         if not sys_text and not tools:  # compaction summarizer
             role, parts = "summarizer", [types.Part(text="SUMMARY: coder located the bug and applied a fix.")]
-        elif "`code_analyzer`, a read-only code locator" in sys_text:
+        elif "You are `code_analyzer`, a read-only code" in sys_text:  # v1 "locator", v2 "navigation specialist"
             role = "analyzer"
             step = len(responses)
             parts = [
@@ -143,7 +145,10 @@ def main() -> None:
         SubprocessManager.start = _start
 
     sub = Path(a.submission).resolve()
-    ev = yaml.safe_load((sub / "eval_config.yaml").read_text())["evaluation"]
+    # harness defaults (scripts/inference.py) apply when a tree ships no eval_config.yaml
+    ev = {"timeout_seconds": 300, "max_time_minutes": 60, "max_tool_calls": 100, "max_turns": 500}
+    if (sub / "eval_config.yaml").exists():
+        ev.update(yaml.safe_load((sub / "eval_config.yaml").read_text())["evaluation"])
     tasks = [t for t in load_tasks(Path(a.tasks)) if t.instance_id == a.task_id]
     assert tasks, a.task_id
     task = tasks[0]

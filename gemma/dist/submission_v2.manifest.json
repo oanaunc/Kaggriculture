@@ -1,0 +1,86 @@
+{
+  "zip": "/home/user/Kaggriculture/gemma/dist/submission_v2.zip",
+  "sha256": "e156523b0f57bfe2052190d247b340eeee2c9a67e5597cfac68060ba86f9db60",
+  "zip_bytes": 3854,
+  "entries": [
+    "agent.yaml",
+    "configs/sampling.yaml",
+    "eval_config.yaml",
+    "prompts/analyzer.md",
+    "prompts/system.md",
+    "sub_agents/code_analyzer.yaml"
+  ],
+  "files": [
+    "agent.yaml",
+    "configs/sampling.yaml",
+    "eval_config.yaml",
+    "prompts/analyzer.md",
+    "prompts/system.md",
+    "sub_agents/code_analyzer.yaml"
+  ],
+  "bytes": 5492,
+  "agents": [
+    {
+      "agent": "swe_coder",
+      "file": "agent.yaml",
+      "tools": [
+        "run_command",
+        "read_file",
+        "edit_file",
+        "write_file",
+        "get_status",
+        "submit_patch",
+        "agent_tool:code_analyzer"
+      ],
+      "instruction_chars": 3050,
+      "max_output_tokens": 8192,
+      "temperature": 0.2
+    },
+    {
+      "agent": "code_analyzer",
+      "file": "sub_agents/code_analyzer.yaml",
+      "tools": [
+        "run_command",
+        "read_file",
+        "search_similar_code",
+        "get_code_neighbors",
+        "get_code_subgraph"
+      ],
+      "instruction_chars": 1142,
+      "max_output_tokens": 8192,
+      "temperature": 0.2
+    }
+  ],
+  "evaluation": {
+    "timeout_seconds": 300,
+    "max_time_minutes": 8,
+    "max_tool_calls": 100,
+    "max_turns": 500
+  },
+  "worst_case_runtime_min": 1088,
+  "limit_min": 720,
+  "assumptions": {
+    "tasks": 125,
+    "setup_min_per_task": 0.5,
+    "startup_min": 25
+  },
+  "official": "ok",
+  "root_agent": "swe_coder",
+  "compiled_agents": [
+    "swe_coder",
+    "code_analyzer"
+  ],
+  "root_tools": [
+    "code_analyzer",
+    "edit_file",
+    "get_status",
+    "read_file",
+    "run_command",
+    "submit_patch",
+    "write_file"
+  ],
+  "rendered_instruction_chars": {
+    "swe_coder": 3050,
+    "code_analyzer": 1142
+  }
+}

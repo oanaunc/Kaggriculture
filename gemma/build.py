@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Validate gemma/submission/ and package it as the exact submission.zip Kaggle expects.
+"""Validate a submission source tree and package it as the exact zip Kaggle expects.
 
 Usage:
-    python3 gemma/build.py                      # local checks + zip
-    /tmp/gemma/venv/bin/python gemma/build.py   # + official harness checks (adk_submission/swegemma)
+    python3 gemma/build.py [TREE]                      # local checks + zip
+    /tmp/gemma/venv/bin/python gemma/build.py [TREE]   # + official harness checks (adk_submission/swegemma)
 
-Output: gemma/dist/submission.zip (files only, agent.yaml at the archive root, deterministic bytes)
-plus gemma/dist/manifest.json (sha256, file list, budget arithmetic).
+TREE is a directory under gemma/ (default: submission = v1).
+Output:
+    submission     -> gemma/dist/submission.zip    + gemma/dist/manifest.json   (v1, unchanged)
+    submission_v2  -> gemma/dist/submission_v2.zip + gemma/dist/submission_v2.manifest.json
+(files only, agent.yaml at the archive root, deterministic bytes; manifest = sha256, file list, budgets).
 
 Checks (local, no harness needed):
   * exactly one root config (agent.yaml) at the root; no symlinks; allowed extensions only; < 3 GiB
@@ -16,7 +19,8 @@ Checks (local, no harness needed):
   * instruction placeholders: only {problem_description} / {problem_description?} (ADK raises KeyError otherwise)
   * prompts never tell the agent to run `rg` (not installed in the sandbox)
   * generation config within the harness GenerationConstraints; thinking disabled explicitly
-  * eval_config.yaml keys/types, and the worst-case 12 h runtime arithmetic
+  * eval_config.yaml keys/types, and the worst-case 12 h runtime arithmetic (a hard failure for v1; for
+    trees in WORST_CASE_ADVISORY it is reported only, see README "v2" for why)
 Checks (official, when the harness wheels are importable):
   * adk_submission.validate_directory with swegemma.config.build_submission_limits()
   * swegemma.models.discovery.validate_single_declared_model
@@ -39,9 +43,11 @@ from pathlib import Path
 import yaml
 
 HERE = Path(__file__).resolve().parent
-SRC = HERE / "submission"
 DIST = HERE / "dist"
-ZIP_PATH = DIST / "submission.zip"
+DEFAULT_TREE = "submission"
+# Trees whose budget is justified by LB evidence (a completed run with looser budgets), not by the
+# worst-case bound; for them the worst-case arithmetic is recorded in the manifest but does not fail.
+WORST_CASE_ADVISORY = {"submission_v2"}
 
 MODEL = "gemma-4-31b-it-qat-w4a16-ct"
 ROOT_NAMES = ["agent.yaml", "agent.yml", "root_agent.yaml", "root_agent.yml"]
@@ -175,7 +181,7 @@ def check_agent(root: Path, path: Path, is_root: bool, seen: set, report: list) 
         check_agent(root, s, False, seen, report)
 
 
-def check_eval_config(root: Path) -> dict:
+def check_eval_config(root: Path, strict_worst_case: bool = True) -> dict:
     p = root / "eval_config.yaml"
     if not p.exists():
         return {"eval_config": "absent (harness defaults: 60 min / 100 calls / 500 turns)"}
@@ -189,7 +195,10 @@ def check_eval_config(root: Path) -> dict:
     t = float(sec.get("max_time_minutes", 60))
     worst = STARTUP_MIN + N_TASKS_ASSUMED * (t + SETUP_MIN_PER_TASK)
     if worst > LIMIT_MIN - 30:
-        fail(f"eval_config.yaml: worst-case runtime {worst:.0f} min leaves < 30 min of the 12 h limit")
+        msg = f"eval_config.yaml: worst-case runtime {worst:.0f} min leaves < 30 min of the 12 h limit"
+        if strict_worst_case:
+            fail(msg)
+        print(f"NOTE (advisory for this tree): {msg}")
     if sec.get("timeout_seconds", 300) < 300:
         print("WARNING: timeout_seconds < 300 may also bound Phase-2 verification pytest")
     return {"evaluation": sec, "worst_case_runtime_min": round(worst), "limit_min": LIMIT_MIN,
@@ -197,7 +206,7 @@ def check_eval_config(root: Path) -> dict:
                             "startup_min": STARTUP_MIN}}
 
 
-def local_checks(root: Path) -> dict:
+def local_checks(root: Path, strict_worst_case: bool = True) -> dict:
     roots = [n for n in ROOT_NAMES if (root / n).exists()]
     if roots != ["agent.yaml"]:
         fail(f"need exactly agent.yaml at the root, found {roots}")
@@ -230,7 +239,7 @@ def local_checks(root: Path) -> dict:
     if unref:
         fail(f"files not referenced by any config: {unref}")
     return {"files": sorted(p.relative_to(root).as_posix() for p in files), "bytes": total,
-            "agents": report, **check_eval_config(root)}
+            "agents": report, **check_eval_config(root, strict_worst_case)}
 
 
 # Stand-ins with the real tool signatures (swegemma.tools): compiling only checks names/schemas.
@@ -295,8 +304,11 @@ def official_checks(root: Path) -> dict:
     for a in agents:
         if isinstance(a, LlmAgent) and isinstance(a.instruction, str):
             text = asyncio.run(inject_session_state(a.instruction, _Ctx()))
-            if "Sample issue with {braces}" not in text:
-                fail(f"{a.name}: problem_description was not injected")
+            if "{problem_description" in a.instruction:
+                if "Sample issue with {braces}" not in text:
+                    fail(f"{a.name}: problem_description was not injected")
+            elif text != a.instruction:  # no placeholders: rendering must be a no-op
+                fail(f"{a.name}: instruction changed during state injection")
             rendered[a.name] = len(text)
         gc = getattr(a, "generate_content_config", None)
         if gc is not None and gc.max_output_tokens is not None and gc.max_output_tokens > 8192:
@@ -318,8 +330,17 @@ def package(src: Path, zip_path: Path) -> None:
 
 
 def main() -> None:
+    tree = sys.argv[1].strip("/") if len(sys.argv) > 1 else DEFAULT_TREE
+    if "/" in tree or tree.startswith(".") or tree in ("dist", "tools"):
+        fail(f"TREE must be a directory name under {HERE}, got {tree!r}")
+    SRC = HERE / tree
+    if not (SRC / "agent.yaml").is_file():
+        fail(f"{SRC} has no agent.yaml")
+    ZIP_PATH = DIST / f"{tree}.zip"
+    manifest_path = DIST / ("manifest.json" if tree == DEFAULT_TREE else f"{tree}.manifest.json")
+    strict = tree not in WORST_CASE_ADVISORY
     print(f"source: {SRC}")
-    local = local_checks(SRC)
+    local = local_checks(SRC, strict)
     print("local checks: ok")
     official = official_checks(SRC)
     print(f"official checks: {official['official']}")
@@ -332,7 +353,7 @@ def main() -> None:
             fail("corrupt zip")
         with tempfile.TemporaryDirectory() as td:
             z.extractall(td)
-            rt_local = local_checks(Path(td))
+            rt_local = local_checks(Path(td), strict)
             rt_official = official_checks(Path(td))
     if rt_local["files"] != local["files"] or rt_official["official"] != official["official"]:
         fail("round-trip mismatch")
@@ -340,8 +361,8 @@ def main() -> None:
     sha = hashlib.sha256(ZIP_PATH.read_bytes()).hexdigest()
     manifest = {"zip": str(ZIP_PATH), "sha256": sha, "zip_bytes": ZIP_PATH.stat().st_size,
                 "entries": names, **local, **official}
-    (DIST / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")
-    print(json.dumps({k: manifest[k] for k in ("zip", "sha256", "zip_bytes", "entries", "worst_case_runtime_min")}, indent=2))
+    manifest_path.write_text(json.dumps(manifest, indent=2, default=str) + "\n")
+    print(json.dumps({k: manifest.get(k) for k in ("zip", "sha256", "zip_bytes", "entries", "worst_case_runtime_min")}, indent=2))
 
 
 if __name__ == "__main__":
