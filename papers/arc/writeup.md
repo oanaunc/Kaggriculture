@@ -6,7 +6,7 @@
 
 ## 1. Summary
 
-Small open models driving a Python tool (the "Duck" harness released by Tufa Labs, here with Qwen 3.8 on one RTX Pro 6000) can play ARC-AGI-3 games, but score only ~6% on the public games. Before changing the model or the prompts, we asked a narrower question: **how much of the failure is caused by the harness rather than by the model's reasoning?** We parsed 50 full game transcripts (25 public games × 2 independent public runs), checked every blocked game against its source code, and found that several of the most damaging failures were harness defects that silently corrupt what the model sees or remembers. Fixing them unlocked the first level of three games that scored zero in both reference runs (sp80, tn36, dc22), without touching the model, the sampling or the per-game budget. **[TBD: leaderboard score and multi-run statistics.]**
+Small open models driving a Python tool (the "Duck" harness released by Tufa Labs, here with Qwen 3.8 on one RTX Pro 6000) can play ARC-AGI-3 games, but score only ~6% on the public games. Before changing the model or the prompts, we asked a narrower question: **how much of the failure is caused by the harness rather than by the model's reasoning?** We parsed 50 full game transcripts (25 public games × 2 independent public runs), checked every blocked game against its source code, and found that several of the most damaging failures were harness defects that silently corrupt what the model sees or remembers. Fixing them made three games that scored zero in both reference runs (sp80, tn36, dc22) complete levels in every one of our runs, without touching the model, the sampling or the per-game budget; the best configuration averages 7.41 on the public games over two runs versus 6.27 for the reference, and raised our leaderboard score from 3.42 to 3.66. We also report two ideas that did not work (trimming past reasoning, stalled-game preemption), because in this regime of large run-to-run variance negative results are as informative as positive ones.
 
 The contribution is a transcript-driven method for auditing agent harnesses and a set of general, model-agnostic fixes that apply to any tool-using agent operating an interactive environment.
 
@@ -45,18 +45,25 @@ Every change is covered by unit checks and an offline smoke test that plays all 
 
 ## 5. Results
 
-Public games, one run each (the same model, sampling and budget as the reference runs):
+Public games, same model, sampling and budget as the reference runs. Identical code varies by about ±1 point between runs (v2 twice: 8.04 and 6.77), so we report every run.
 
-| Run | Mean score | Levels completed | Zero-score games |
+| Run | Mean score | Levels | Games with 0 levels |
 |---|---|---|---|
 | Public Duck, run A | 5.78 | 35 | 5 |
 | Public Duck, run B | 6.76 | 36 | 6 |
-| Ours v1 | 6.25 | 33 | 5 |
-| Ours v2 | 8.04 | 40 | 4 |
+| Ours v1 (fidelity fixes) | 6.25 | 33 | 5 |
+| Ours v2 (v1 + turn budget + stuck nudges), run 1 | 8.04 | 40 | 4 |
+| Ours v2, run 2 | 6.77 | 36 | 5 |
+| Ours v3 (v2 + keep reasoning only for newest turn) | 5.71 | 31 | 6 |
+| Ours v4 (v2 + stall preemption at 75 min) | 7.02 | 30 | 8 |
 
 ![Levels completed per game](figures/levels_per_game.png)
 
-The targeted games respond as predicted: sp80, tn36 and dc22 each completed a level for the first time; the new animation evidence appeared in 23 (sp80) and 26 (tn36) prompts. Other games moved in both directions (bp35 and tr87 fell to zero), consistent with run-to-run variance. The aggregate score is flat because per-game variance between identical runs is large (ft09 cleared 1 vs 4 levels across the two reference runs), which also dominates single-run comparisons. **[TBD: repeated runs with confidence intervals; leaderboard score.]**
+Leaderboard (hidden games): v1 3.42, v2 3.66 (reference forks of the public Duck cluster at 3–5).
+
+What is robust across runs: sp80, tn36 and dc22 complete at least one level in every run of v1–v4 and never in the references. In sp80 and tn36 the new animation evidence was shown in 23 and 26 prompts respectively; in dc22 the model no longer idles on a false "game over". What is not robust: the aggregate, which single runs cannot resolve.
+
+Negative results. (i) Dropping past hidden reasoning from the carried history (v3) freed context but lowered the score: the model loses continuity of its own hypotheses. (ii) Stopping games after 75 minutes without progress (v4) freed GPU share, which let sk48 complete its first level for the first time, but also killed slow first levels (sc25, cn04, cd82). **[TBD: v5 — preemption only after the first completed level.]**
 
 ## 6. Why it works
 
