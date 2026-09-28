@@ -103,6 +103,10 @@ def _env_float(name: str, default: float) -> float:
 # completed a level recently may run past its base budget (up to
 # DUCK_EXTEND_MAX_FACTOR x) while the run is ahead of its worst-case schedule.
 _DUCK_STALL_SECONDS = _env_float("DUCK_STALL_SECONDS", 4500.0)
+# Before the first completed level the stall rule uses this window instead
+# (v4 showed a 4500 s window also killed slow-but-successful first levels).
+# 0 disables stall-stopping until the first level is completed.
+_DUCK_STALL_FIRST_LEVEL_SECONDS = _env_float("DUCK_STALL_FIRST_LEVEL_SECONDS", 0.0)
 _DUCK_EXTEND_MAX_FACTOR = _env_float("DUCK_EXTEND_MAX_FACTOR", 1.6)
 _DUCK_EXTEND_RECENT_SECONDS = _env_float("DUCK_EXTEND_RECENT_SECONDS", 1800.0)
 _DUCK_EXTEND_DEADLINE_MARGIN_SECONDS = _env_float("DUCK_EXTEND_DEADLINE_MARGIN_SECONDS", 900.0)
@@ -286,7 +290,8 @@ class _HarnessGameSession:
         now = time.monotonic()
         elapsed = now - self.started_at
         last_progress = self.last_progress_at if self.last_progress_at is not None else self.started_at
-        if _DUCK_STALL_SECONDS > 0 and now - last_progress >= _DUCK_STALL_SECONDS:
+        stall_window = _DUCK_STALL_SECONDS if self.last_progress_at is not None else _DUCK_STALL_FIRST_LEVEL_SECONDS
+        if stall_window > 0 and now - last_progress >= stall_window:
             self.stop_reason_note = f"stalled {int(now - last_progress)}s without level progress"
             return True
         base = self.solver.max_runtime_s_per_game
