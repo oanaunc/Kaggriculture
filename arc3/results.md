@@ -24,3 +24,7 @@ Leaderboard context (2026-09-27 20:17 UTC, 3406 teams): #1 27.29, #5 18.80, #10 
 Most teams sit at 3-5 (public Duck forks). Public-25 of the public Qwen3.8-27B-FP8 Duck variant (foysal, 2026-08-18): 3.79 / 25 levels, i.e. worse than Flash-Next.
 
 Robust effect across v1-v3: dc22, sp80, tn36 complete >=1 level in every run (0 in both public reference runs).
+
+## Next submissions (plan)
+- 2026-09-29 ARC-AGI-3: `kaggle competitions submit arc-prize-2026-arc-agi-3 -k oanaunciuleanu/arc3-duck-ours-v5 -v 1 -f submission.parquet -m "v5: v2 + compute reallocation (stall-stop after first level, progress extensions)"` (version 1 = the 10.34 run; version 2 is the confirmation rerun, identical code).
+- 2026-09-29 Gemma: exact 0.12 base `gemma/dist/submission_r12base.zip` uploaded as `submission.zip` (calibration).
