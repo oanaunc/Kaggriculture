@@ -90,6 +90,24 @@ def artifact_stem(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, "").strip() or default)
+    except ValueError:
+        return default
+
+
+# Compute reallocation (ours). Most wall time went to levels that were never
+# solved. A game that has made no level progress for DUCK_STALL_SECONDS stops,
+# which frees GPU share for the games that are still progressing; a game that
+# completed a level recently may run past its base budget (up to
+# DUCK_EXTEND_MAX_FACTOR x) while the run is ahead of its worst-case schedule.
+_DUCK_STALL_SECONDS = _env_float("DUCK_STALL_SECONDS", 4500.0)
+_DUCK_EXTEND_MAX_FACTOR = _env_float("DUCK_EXTEND_MAX_FACTOR", 1.6)
+_DUCK_EXTEND_RECENT_SECONDS = _env_float("DUCK_EXTEND_RECENT_SECONDS", 1800.0)
+_DUCK_EXTEND_DEADLINE_MARGIN_SECONDS = _env_float("DUCK_EXTEND_DEADLINE_MARGIN_SECONDS", 900.0)
+
+
 def _grid_from_state(state: taaf.game.GameState | None) -> tuple[tuple[int, ...], ...]:
     if state is None:
         return ()
@@ -230,6 +248,8 @@ class _HarnessGameSession:
     stop_event: threading.Event
     viewer_data_path: Path
     started_at: float = field(default_factory=time.monotonic)
+    last_progress_at: float | None = None
+    stop_reason_note: str | None = None
     history_entries: list[HistoryEntry] = field(default_factory=list)
     viewer_events: list[dict[str, Any]] = field(default_factory=list)
     analysis_step: int = 0
@@ -263,18 +283,52 @@ class _HarnessGameSession:
         return len(run.history) if run is not None else 0
 
     def runtime_limit_reached(self) -> bool:
-        if self.solver.max_runtime_s_per_game is None:
+        now = time.monotonic()
+        elapsed = now - self.started_at
+        last_progress = self.last_progress_at if self.last_progress_at is not None else self.started_at
+        if _DUCK_STALL_SECONDS > 0 and now - last_progress >= _DUCK_STALL_SECONDS:
+            self.stop_reason_note = f"stalled {int(now - last_progress)}s without level progress"
+            return True
+        base = self.solver.max_runtime_s_per_game
+        if base is None:
             return False
-        return (
-            time.monotonic() - self.started_at
-        ) >= self.solver.max_runtime_s_per_game
+        if elapsed < base:
+            return False
+        # Past the base budget: extend only a recently progressing game, only up
+        # to the cap, and only while the run is ahead of its worst-case schedule.
+        deadline = getattr(self.solver, "_duck_run_deadline", None)
+        recently_progressing = (
+            self.last_progress_at is not None
+            and now - self.last_progress_at < _DUCK_EXTEND_RECENT_SECONDS
+        )
+        if (
+            recently_progressing
+            and elapsed < base * max(1.0, _DUCK_EXTEND_MAX_FACTOR)
+            and deadline is not None
+            and now < deadline - _DUCK_EXTEND_DEADLINE_MARGIN_SECONDS
+        ):
+            return False
+        self.stop_reason_note = "time budget"
+        return True
 
     def timing_payload(self) -> dict[str, float | None]:
-        elapsed = max(0.0, time.monotonic() - self.started_at)
+        now = time.monotonic()
+        elapsed = max(0.0, now - self.started_at)
         if self.solver.max_runtime_s_per_game is None:
             remaining = None
         else:
-            remaining = max(0.0, self.solver.max_runtime_s_per_game - elapsed)
+            base = float(self.solver.max_runtime_s_per_game)
+            remaining = max(0.0, base - elapsed)
+            if remaining <= 0.0 and not self.runtime_limit_reached():
+                # Extended game: remaining time up to the extension cap / run deadline.
+                deadline = getattr(self.solver, "_duck_run_deadline", None) or now
+                remaining = max(
+                    0.0,
+                    min(
+                        base * max(1.0, _DUCK_EXTEND_MAX_FACTOR) - elapsed,
+                        deadline - _DUCK_EXTEND_DEADLINE_MARGIN_SECONDS - now,
+                    ),
+                )
         return {"run_elapsed_seconds": elapsed, "time_remaining_seconds": remaining}
 
     def request_timeout_seconds(self) -> float | None:
@@ -384,7 +438,9 @@ class _HarnessGameSession:
         finally:
             total_tokens = _analyzer_reported_tokens(self.analyzer)
             if run.solver_note is None:
-                run.solver_note = f"tokens={total_tokens}"
+                run.solver_note = f"tokens={total_tokens}" + (
+                    f" stop={self.stop_reason_note}" if self.stop_reason_note else ""
+                )
             self._finish_if_needed()
             self.state_path.unlink(missing_ok=True)
             self._write_analysis_html()
@@ -773,6 +829,8 @@ class _HarnessGameSession:
         level_completed = bool(
             new_state.just_won_level and raw_state != arcengine.GameState.WIN
         )
+        if level_completed or completed > previous_completed:
+            self.last_progress_at = time.monotonic()
         payload = {
             "executed": True,
             "action_num": self.action_count,
@@ -968,6 +1026,13 @@ class HarnessSolver(Solver):
     async def _run_games(self, games: list[taaf.game.Game]) -> None:
         self._stop_event.clear()
         semaphore = asyncio.Semaphore(max(1, int(self.concurrency)))
+        # Worst-case schedule of the original design: ceil(games / concurrency)
+        # waves of the base per-game budget. Extensions never push past it.
+        if self.max_runtime_s_per_game is not None and games:
+            waves = -(-len(games) // max(1, int(self.concurrency)))
+            self._duck_run_deadline = time.monotonic() + waves * float(self.max_runtime_s_per_game)
+        else:
+            self._duck_run_deadline = None
         pass_indices_by_game_id: dict[str, int] = {}
         loop = asyncio.get_running_loop()
         pool = self._worker_pool
