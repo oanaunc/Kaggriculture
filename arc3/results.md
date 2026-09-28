@@ -8,6 +8,7 @@ Public 25 games, one run each, same model (Qwen3.8 Flash Next NVFP4), 132 min/ga
 | Public Duck B (keithtyser) | 2026-09-01 | 6.76 | 36 | 6 | reference |
 | Ours v1 | 2026-09-27 | 6.25 | 33 | 5 | game-over fix, animation evidence, note parsing, context budget, level memory |
 | Ours v2 | 2026-09-27 | 8.04 | 40 | 4 | v1 + >=420 s turn yield + idle/stuck nudges |
+| Ours v2 (rerun) | 2026-09-27 | 6.77 | 36 | - | identical code; run-to-run noise ~±1 point. v2 mean of 2 runs = 7.41 vs public mean 6.27 |
 | Ours v3 | 2026-09-27 | 5.71 | 31 | 6 | v2 + keep reasoning only for newest turn -> worse; reverted (DUCK_KEEP_REASONING_TURNS=-1 default) |
 
 Leaderboard submissions:
