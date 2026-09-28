@@ -6,7 +6,7 @@
 
 ## 1. Summary
 
-Small open models driving a Python tool (the "Duck" harness released by Tufa Labs, here with Qwen 3.8 on one RTX Pro 6000) can play ARC-AGI-3 games, but score only ~6% on the public games. Before changing the model or the prompts, we asked a narrower question: **how much of the failure is caused by the harness rather than by the model's reasoning?** We parsed 50 full game transcripts (25 public games × 2 independent public runs), checked every blocked game against its source code, and found that several of the most damaging failures were harness defects that silently corrupt what the model sees or remembers. Fixing them made three games that scored zero in both reference runs (sp80, tn36, dc22) complete levels in every one of our runs, without touching the model, the sampling or the per-game budget; the best configuration averages 8.85 on the public games over two runs versus 6.27 for the reference, and raised our leaderboard score from 3.42 to 3.66. A final change, compute reallocation from games stuck after their first level to games still progressing, gave the largest gain. We also report two ideas that did not work (trimming past reasoning, preempting games before their first level), because in this regime of large run-to-run variance negative results are as informative as positive ones.
+Small open models driving a Python tool (the "Duck" harness by Tufa Labs, here with Qwen 3.8 on one RTX Pro 6000) play ARC-AGI-3 games but score only ~6% on the public games. We asked a narrower question than "which model or prompt": **how much of the failure is caused by the harness rather than the model's reasoning?** Parsing 50 full transcripts (25 public games × 2 public runs) and checking blocked games against their source code, we found harness defects that silently corrupt what the model sees or remembers. Fixing them made three games that scored zero in both reference runs (sp80, tn36, dc22) complete levels in every one of our runs, with the same model, sampling and budget. Reallocating compute from games stuck after their first level to games still progressing gave the largest further gain: 8.85 mean over two runs versus 6.27 for the reference. We also report two ideas that did not work, since with large run-to-run variance negative results are informative.
 
 The contribution is a transcript-driven method for auditing agent harnesses and a set of general, model-agnostic fixes that apply to any tool-using agent operating an interactive environment.
 
@@ -40,8 +40,9 @@ All fixes are harness-only and game-agnostic.
 | Knowledge carry-over | On a level transition keep the action model and the goal that worked, plus the last actions that completed the level, as cross-level notes; on game over keep the models and flag the failed plan | Re-learning each level |
 | Context budget | Count images at a fixed vision-token cost; keep only the newest image in history | Short effective memory |
 | Turn budget and nudges (v2) | Yield only after ≥420 s; prompt after ≥3 non-acting turns and after ≥50 actions on a level to enumerate untested win hypotheses | Analysis loops, stuck levels |
+| Compute reallocation (v5) | A game that completed a level but then made no progress for 75 min stops, freeing GPU share for games still progressing; a recently progressing game may run past its budget (≤1.6×) while the run is ahead of the original worst-case schedule | 61–64% of time spent on never-solved levels |
 
-Every change is covered by unit checks and an offline smoke test that plays all 25 public games against a mock LLM server, so harness regressions are caught without GPU time.
+Every change is covered by unit checks and an offline smoke test against a mock LLM server.
 
 ## 5. Results
 
@@ -73,7 +74,7 @@ The Duck's model is competent once it has the right evidence: on the levels it c
 
 ## 7. Limitations and next steps
 
-Single runs are noisy, so we report per-game mechanism evidence alongside the aggregate. Remaining failure modes are genuine reasoning gaps (g50t's record-and-replay clone, sk48's undo) and throughput. Next: run repeated evaluations to measure variance, expose intermediate frames directly as Python objects, persist a small Python workspace across tool calls, and improve serving throughput so each game gets more reasoning within the same budget.
+Two runs per configuration cannot give tight confidence intervals; we report per-game mechanism evidence alongside aggregates. Remaining failures are genuine reasoning gaps (sk48's undo, bp35's physics). Next: expose intermediate frames as Python objects and improve serving throughput.
 
 ## Acknowledgements
 
