@@ -107,7 +107,7 @@ _DUCK_STALL_SECONDS = _env_float("DUCK_STALL_SECONDS", 4500.0)
 # (v4 showed a 4500 s window also killed slow-but-successful first levels).
 # 0 disables stall-stopping until the first level is completed.
 _DUCK_STALL_FIRST_LEVEL_SECONDS = _env_float("DUCK_STALL_FIRST_LEVEL_SECONDS", 0.0)
-_DUCK_EXTEND_MAX_FACTOR = _env_float("DUCK_EXTEND_MAX_FACTOR", 1.6)
+_DUCK_EXTEND_MAX_FACTOR = _env_float("DUCK_EXTEND_MAX_FACTOR", 1.0)  # 1.6 in v5 lengthened waves on the 110-game LB run (LB 2.53 vs 3.66)
 _DUCK_EXTEND_RECENT_SECONDS = _env_float("DUCK_EXTEND_RECENT_SECONDS", 1800.0)
 _DUCK_EXTEND_DEADLINE_MARGIN_SECONDS = _env_float("DUCK_EXTEND_DEADLINE_MARGIN_SECONDS", 900.0)
 

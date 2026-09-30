@@ -1,0 +1,72 @@
+{
+  "zip": "/home/user/Kaggriculture/gemma/dist/submission_v3.zip",
+  "sha256": "d081391e4656c81dc98e101a21a41f2ba843057781e91665dc2d463f70c8519b",
+  "zip_bytes": 3513,
+  "entries": [
+    "agent.yaml",
+    "configs/sampling.yaml",
+    "prompts/analyzer.md",
+    "prompts/system.md",
+    "sub_agents/code_analyzer.yaml"
+  ],
+  "files": [
+    "agent.yaml",
+    "configs/sampling.yaml",
+    "prompts/analyzer.md",
+    "prompts/system.md",
+    "sub_agents/code_analyzer.yaml"
+  ],
+  "bytes": 5145,
+  "agents": [
+    {
+      "agent": "swe_coder",
+      "file": "agent.yaml",
+      "tools": [
+        "run_command",
+        "read_file",
+        "edit_file",
+        "write_file",
+        "get_status",
+        "submit_patch",
+        "agent_tool:code_analyzer"
+      ],
+      "instruction_chars": 3050,
+      "max_output_tokens": 8192,
+      "temperature": 0.2
+    },
+    {
+      "agent": "code_analyzer",
+      "file": "sub_agents/code_analyzer.yaml",
+      "tools": [
+        "run_command",
+        "read_file",
+        "search_similar_code",
+        "get_code_neighbors",
+        "get_code_subgraph"
+      ],
+      "instruction_chars": 1142,
+      "max_output_tokens": 8192,
+      "temperature": 0.2
+    }
+  ],
+  "eval_config": "absent (harness defaults: 60 min / 100 calls / 500 turns)",
+  "official": "ok",
+  "root_agent": "swe_coder",
+  "compiled_agents": [
+    "swe_coder",
+    "code_analyzer"
+  ],
+  "root_tools": [
+    "code_analyzer",
+    "edit_file",
+    "get_status",
+    "read_file",
+    "run_command",
+    "submit_patch",
+    "write_file"
+  ],
+  "rendered_instruction_chars": {
+    "swe_coder": 3050,
+    "code_analyzer": 1142
+  }
+}

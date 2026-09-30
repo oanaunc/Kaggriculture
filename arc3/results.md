@@ -20,7 +20,7 @@ Leaderboard submissions:
 |---|---|---|---|
 | 56605759 | v1 | 2026-09-27 10:19 UTC | 3.42 (rank 470/3401) |
 | 56623477 | v2 | 2026-09-28 00:15 UTC | 3.66 (rank 374/3430) |
-| 56656628 | v5 | 2026-09-29 00:14 UTC | pending |
+| 56656628 | v5 | 2026-09-29 00:14 UTC | 2.53 (worse than v2 3.66) |
 
 Leaderboard context (2026-09-27 20:17 UTC, 3406 teams): #1 27.29, #5 18.80, #10 11.64, #20 7.36, #50 5.11, #100 4.43, #200 4.02, #300 3.75.
 Most teams sit at 3-5 (public Duck forks). Public-25 of the public Qwen3.8-27B-FP8 Duck variant (foysal, 2026-08-18): 3.79 / 25 levels, i.e. worse than Flash-Next.
@@ -30,3 +30,9 @@ Robust effect across v1-v3: dc22, sp80, tn36 complete >=1 level in every run (0 
 ## Next submissions (plan)
 - 2026-09-29 ARC-AGI-3: `kaggle competitions submit arc-prize-2026-arc-agi-3 -k oanaunciuleanu/arc3-duck-ours-v5 -v 1 -f submission.parquet -m "v5: v2 + compute reallocation (stall-stop after first level, progress extensions)"` (version 1 = the 10.34 run; version 2 is the confirmation rerun, identical code).
 - 2026-09-29 Gemma: exact 0.12 base `gemma/dist/submission_r12base.zip` uploaded as `submission.zip` (calibration).
+
+### 2026-09-30 analysis of the v5 LB drop
+Public-25 evaluation runs all 25 games in one wave (concurrency 28), so the progress *extension* (up to 1.6x base budget)
+never activated there; only the stall-stop was measured (v5: 10.34 / 7.35). On the 110-game LB run (4 waves), extensions
+lengthen waves, and the last wave most likely got cut by the 9 h notebook limit. v6 = v5 with DUCK_EXTEND_MAX_FACTOR=1.0,
+i.e. exactly what the public evaluation measured. Commit runs now use ARC3_QUICK_COMMIT=1 (2 games x 2 min) to save GPU quota.

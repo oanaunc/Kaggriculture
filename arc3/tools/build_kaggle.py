@@ -45,6 +45,15 @@ for cell in nb["cells"]:
         start = src.index("DATASET_SOURCES = [")
         end = src.index("]", start) + 1
         src = src[:start] + f'DATASET_SOURCES = ["{USER}/{DATASET_SLUG}", "{RUNTIME_DATASET}"]' + src[end:]
+    if os.environ.get("ARC3_QUICK_COMMIT") == "1" and "bm.games = [offline_by_id" in src and "\nbm.n_passes = 1\n" in src:
+        # Interactive (non-submission) run: play 2 games for 2 minutes only, so the
+        # commit needed before submitting costs minutes of GPU instead of ~2.3 h.
+        src = src.replace(
+            "\nbm.n_passes = 1\n",
+            "\nif not TRUE_SUBMISSION:\n    bm.games = bm.games[:2]\n    bm.solver.max_runtime_s_per_game = 120.0\nbm.n_passes = 1\n",
+            1,
+        )
+        print("quick-commit patch applied")
     cell["source"] = src
     if cell["cell_type"] == "code":
         cell["outputs"] = []

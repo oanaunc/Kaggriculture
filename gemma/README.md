@@ -228,4 +228,5 @@ The v1 extras are not carried over. v1 bundled all of them and scored half of R1
 - **Runtime.** See the cap reasoning above. If avoided crashes turn into many 8-minute tasks, total time grows. The hard ceiling is 125 × 8 min of agent time plus setup, and the realised mean is expected to be far lower.
 - **Unknown differences from R12's actual run.** The base was regenerated from R12's code on our copy of the data. If Kaggle's copy of the files let R12 detect a different tool set, its uploaded bundle could differ. That is unlikely: all 9 tools appear in `HARNESS_README.md`, which the notebook greps.
 | 2026-09-28 | v2 | 56623486 | 0.08 | Submitted 00:16 UTC. NOTE: upload must be named exactly `submission.zip` (submission_v2.zip returned HTTP 400). |
-| 2026-09-29 | r12base | 56656630 | pending | Exact reproduction of the public 0.12 bundle (gemma/submission_r12base) to calibrate LB noise vs our deltas. |
+| 2026-09-29 | r12base | 56656630 | 0.12 | Exact public base reproduces 0.12, so v2's deltas (0.08) hurt. | Exact reproduction of the public 0.12 bundle (gemma/submission_r12base) to calibrate LB noise vs our deltas. |
+| 2026-09-30 | v3 | - | pending | v2 minus eval_config (no 8-min cap): isolates cap vs prompt lines. |
