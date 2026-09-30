@@ -54,6 +54,12 @@ for cell in nb["cells"]:
             1,
         )
         print("quick-commit patch applied")
+    if os.environ.get("ARC3_QUICK_COMMIT") == "1":
+        # The public-eval summary cell insists on all 25 games; relax it for quick commits.
+        src = src.replace(
+            "if len(public_runs) != 25 or public_run_ids != list(PUBLIC_GAME_IDS):",
+            "if (len(public_runs) != 25 or public_run_ids != list(PUBLIC_GAME_IDS)) and TRUE_SUBMISSION:",
+        )
     cell["source"] = src
     if cell["cell_type"] == "code":
         cell["outputs"] = []
