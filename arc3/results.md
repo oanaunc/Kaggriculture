@@ -21,6 +21,7 @@ Leaderboard submissions:
 | 56605759 | v1 | 2026-09-27 10:19 UTC | 3.42 (rank 470/3401) |
 | 56623477 | v2 | 2026-09-28 00:15 UTC | 3.66 (rank 374/3430) |
 | 56656628 | v5 | 2026-09-29 00:14 UTC | 2.53 (worse than v2 3.66) |
+| 56693066 | v6 | 2026-09-30 01:12 UTC | pending (kernel arc3-duck-ours-v6 v4: v5 dataset + DUCK_EXTEND_MAX_FACTOR=1.0, quick commit) |
 
 Leaderboard context (2026-09-27 20:17 UTC, 3406 teams): #1 27.29, #5 18.80, #10 11.64, #20 7.36, #50 5.11, #100 4.43, #200 4.02, #300 3.75.
 Most teams sit at 3-5 (public Duck forks). Public-25 of the public Qwen3.8-27B-FP8 Duck variant (foysal, 2026-08-18): 3.79 / 25 levels, i.e. worse than Flash-Next.
