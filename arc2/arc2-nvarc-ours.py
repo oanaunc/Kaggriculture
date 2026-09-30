@@ -2085,6 +2085,7 @@ pump.join(timeout=10)
 print("starter exit code:", starter.poll())
 
 # %% cell 11
+import os
 # [ours] Assemble submission.json. Every step is guarded: whatever fails, a valid file
 # covering every test output with 2 attempts is written.
 import json, traceback
@@ -2103,7 +2104,12 @@ try:
         data = data.load_replies(SOLUTIONS_PATH)
     decoder = ArcDecoder(data.split_multi_replies(), n_guesses=2)
     decoder.load_decoded_results("/kaggle/inference_outputs")
-    model_ranked = decoder.run_selection_algo()   # base selection: score_kgmon
+    # [ours v2] selector: score_full_probmul_3 (medvax reports 29.17 vs 28.33 for
+    # score_kgmon on the 120-task eval); override with ARC_SELECTOR=score_kgmon.
+    import arc_decoder as _ad
+    _selector = getattr(_ad, os.environ.get("ARC_SELECTOR", "score_full_probmul_3"), _ad.score_full_probmul_3)
+    print("*** selection algorithm:", _selector.__name__)
+    model_ranked = decoder.run_selection_algo(_selector)
 except Exception:
     traceback.print_exc()
 
