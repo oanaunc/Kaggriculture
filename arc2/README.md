@@ -199,3 +199,4 @@ It is not a big accuracy jump. The credible accuracy levers from the scouting re
 | Date | Version | Kaggle commit run (4-task check) | Submission ref | Public LB |
 |---|---|---|---|---|
 | 2026-09-27 | v1 | ran cleanly, exit codes [0,0,0,0], model-only = final = 2.5/4 (base 3.0/4; the difference is 36a08778 test 1, found by a single augmented beam in the base run: seed variance) | 56617135 | pending |
+| 2026-09-30 | v2 | commit run clean (exit [0,0,0,0], selector score_full_probmul_3, 2.5/4 on the 4-task check) | submitted 16:0x UTC | pending |
