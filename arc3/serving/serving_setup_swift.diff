@@ -1,0 +1,703 @@
+--- /tmp/arc3/src/keith/serving_setup.py	2026-09-27 06:55:21.709927847 +0000
++++ /home/user/Kaggriculture/arc3/serving/serving_setup_swift.py	2026-09-30 15:08:33.360570754 +0000
+@@ -1,4 +1,10 @@
+-"""Prepare the pinned Qwen3.8-Flash-Next vLLM server on Kaggle.
++"""Prepare the pinned Qwen3.8-Flash-Next vLLM server on Kaggle (Swift 1.5 model).
++
++Derived from keithtyser's serving_setup.py.  Only the model source changes: the
++Kaggle model michaelpoluektov/qwen3-8-swift-nvfp4 (Swift 1.5 Qwen3.8-Flash-Next,
++NVFP4 experts, FP8 PLE, NVIDIA MTP head) replaces the RadixArk checkpoint.  It is
++staged into a RadixArk-compatible symlink tree (see the Swift block below) so the
++pinned vLLM runtime, PLE patch and every serving setting stay identical.
+ 
+ This file changes serving only. The Duck policy, game, model, and notebook stay
+ frozen. Every runtime and model input is offline and pinned. Fast start trusts
+@@ -197,6 +203,68 @@
+     "5791fbfae9b53d4b8f4000bab769f13e1b1d78c763e889663199e3ee76f5252c"
+ )
+ 
++
++# ---------------------------------------------------------------------------
++# Swift 1.5 model source (ARC3_MODEL=swift build).
++#
++# The mounted Kaggle model michaelpoluektov/qwen3-8-swift-nvfp4 is a standard
++# HF layout (config.json + model.safetensors.index.json + shards).  Its body
++# (NVFP4 routed experts, bf16 everything else, FP8 global-scale PLE shards,
++# identical tensor names) is byte-format compatible with the RadixArk checkpoint
++# this pinned runtime was qualified on.  Two things are not:
++#
++#   1. config.json declares ModelOpt "MIXED_PRECISION" (vLLM modelopt_mixed).
++#      The pinned vLLM's PLE loader only selects the FP8 PLE method for
++#      Fp8Config or (via the RadixArk patch) the exact RadixArk NVFP4 config,
++#      and the server is launched with --quantization modelopt_fp4.
++#   2. The MTP head is NVIDIA's, with FP8_PB_WO (128x128 block FP8) routed
++#      experts.  The pinned vLLM has no block-FP8 MoE path in modelopt_mixed.
++#
++# So setup stages a symlink tree under /tmp: every Swift file is linked except
++# config.json / hf_quant_config.json (replaced with the exact RadixArk files, so
++# the existing pinned PLE patch, config hash gate and --quantization flag apply
++# unchanged), the MTP file (rewritten: routed experts dequantized to bf16 in the
++# RadixArk fused layout, all other MTP tensors copied verbatim) and the index.
++# ---------------------------------------------------------------------------
++SWIFT_KAGGLE_MODEL_SOURCE = "michaelpoluektov/qwen3-8-swift-nvfp4/Transformers/default/1"
++SWIFT_HF_SOURCE_REPO = "ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4"
++SWIFT_MODEL_KAGGLE_PATH = Path(
++    "/kaggle/input/models/michaelpoluektov/qwen3-8-swift-nvfp4/transformers/default/1"
++)
++SWIFT_CONFIG_SHA256 = "24a5c13bb370878fb1668b80826265d3644ef72dd09d76444722a56ffdfbbffc"
++SWIFT_EXPORT_SHA256 = "2a58a763a2ed9cbc0479cc3e9419971218c11c5263055f0c8b43a52ccaecc36d"
++SWIFT_FILE_COUNT = 196
++SWIFT_TOTAL_BYTES = 132_747_211_718
++SWIFT_STAGING_DIRNAME = "swift-staging"
++SWIFT_STAGING_FILES = {
++    "SWIFT_SOURCE_FILES.json": (
++        10_432,
++        "0a73ce0b61cbf89a8629105b8ae6280aaf9fea17f7afaac68c2ddf8f06206253",
++    ),
++    "staged_config.json": (4_983, MODEL_CONFIG_SHA256),
++    "staged_hf_quant_config.json": (504, MODEL_QUANT_CONFIG_SHA256),
++}
++SWIFT_STAGED_MODEL_DIR = Path("/tmp/qwen38-swift-staged-model")
++SWIFT_MTP_SOURCE_FILE = "mtp-nvidia-fp8.safetensors"
++SWIFT_MTP_STAGED_FILE = "mtp-swift-bf16.safetensors"
++SWIFT_MTP_EXPERT_PREFIX = "mtp.layers.0.mlp.experts."
++SWIFT_MTP_FUSED_GATE_UP = "mtp.layers.0.mlp.experts.gate_up_proj"
++SWIFT_MTP_FUSED_DOWN = "mtp.layers.0.mlp.experts.down_proj"
++SWIFT_MTP_BLOCK = 128
++# 512 x (1280x2560 + 2560x640) bf16 experts + ~0.19 GB verbatim bf16 tensors.
++SWIFT_MTP_STAGED_BOUND_BYTES = 5_400_000_000
++# Files that are never linked into the staged tree.
++SWIFT_STAGE_REPLACED = {
++    "config.json",
++    "hf_quant_config.json",
++    "model.safetensors.index.json",
++    SWIFT_MTP_SOURCE_FILE,
++}
++SWIFT_STAGE_SKIPPED = {".gitattributes", "swift-1.5-flash-next-demo.mp4", "ukisai-banner.png"}
++MIN_RUNTIME_FILESYSTEM_FREE_BYTES = (
++    MIN_RUNTIME_FILESYSTEM_FREE_BYTES + SWIFT_MTP_STAGED_BOUND_BYTES
++)
++
+ BUNDLE_DIR = Path(os.environ["TAAF_KAGGLE_BUNDLE_DIR"])
+ WORKING_DIR = Path(os.environ["TAAF_KAGGLE_WORKING_DIR"])
+ SETUP_ENV_PATH = Path(os.environ["TAAF_KAGGLE_SETUP_ENV"])
+@@ -606,13 +674,15 @@
+         raise RuntimeError(
+             f"Serving setup identity mismatch: {actual_setup} != {expected_setup or '<missing>'}"
+         )
+-    if value.get("model_manifest_sha256") != MODEL_MANIFEST_SHA256:
+-        raise RuntimeError("Source identity has the wrong model manifest hash.")
+     if value.get("runtime_manifest_sha256") != VLLM_RUNTIME_MANIFEST_SHA256:
+         raise RuntimeError("Source identity has the wrong vLLM runtime manifest hash.")
+     model = value.get("model") or {}
+-    if model.get("hf_repo") != MODEL_HF_REPO or model.get("hf_revision") != MODEL_HF_REVISION:
+-        raise RuntimeError("Source identity has the wrong model revision.")
++    if (
++        model.get("kaggle_model_source") != SWIFT_KAGGLE_MODEL_SOURCE
++        or model.get("config_sha256") != SWIFT_CONFIG_SHA256
++        or model.get("staged_config_sha256") != MODEL_CONFIG_SHA256
++    ):
++        raise RuntimeError("Source identity does not describe the pinned Swift model.")
+     runtime = value.get("runtime") or {}
+     if runtime.get("image") != VLLM_IMAGE or runtime.get("kaggle_dataset") != RUNTIME_DATASET:
+         raise RuntimeError("Source identity has the wrong vLLM runtime.")
+@@ -642,81 +712,442 @@
+     return matches[0]
+ 
+ 
++def swift_staging_payload() -> dict[str, Any]:
++    staging_dir = BUNDLE_DIR / SWIFT_STAGING_DIRNAME
++    if not staging_dir.is_dir() or staging_dir.is_symlink():
++        raise RuntimeError(f"Missing regular Swift staging directory: {staging_dir}")
++    actual_names = {entry.name for entry in staging_dir.iterdir()}
++    if actual_names != set(SWIFT_STAGING_FILES):
++        raise RuntimeError(
++            "Swift staging allowlist mismatch: "
++            f"actual={sorted(actual_names)} expected={sorted(SWIFT_STAGING_FILES)}"
++        )
++    rows: dict[str, Any] = {}
++    for name, (expected_size, expected_sha) in SWIFT_STAGING_FILES.items():
++        path = staging_dir / name
++        if not path.is_file() or path.is_symlink():
++            raise RuntimeError(f"Swift staging payload is not a regular file: {path}")
++        actual_size = path.stat().st_size
++        actual_sha = sha256_file(path)
++        if actual_size != expected_size or actual_sha != expected_sha:
++            raise RuntimeError(
++                f"Swift staging payload mismatch for {name}: "
++                f"size={actual_size}/{expected_size} sha256={actual_sha}/{expected_sha}"
++            )
++        rows[name] = {"bytes": actual_size, "sha256": actual_sha}
++    source_files = read_json(staging_dir / "SWIFT_SOURCE_FILES.json")
++    if (
++        source_files.get("kaggle_model_source") != SWIFT_KAGGLE_MODEL_SOURCE
++        or int(source_files.get("file_count", -1)) != SWIFT_FILE_COUNT
++        or int(source_files.get("total_bytes", -1)) != SWIFT_TOTAL_BYTES
++        or source_files.get("small_file_sha256", {}).get("config.json") != SWIFT_CONFIG_SHA256
++    ):
++        raise RuntimeError("SWIFT_SOURCE_FILES.json does not describe the pinned Swift model.")
++    return {"directory": staging_dir, "artifacts": rows, "source_files": source_files}
++
++
++def _looks_like_swift_dir(path: Path | None) -> bool:
++    if path is None:
++        return False
++    try:
++        return (
++            (path / "config.json").is_file()
++            and (path / "SWIFT_FP8_EXPORT.json").is_file()
++            and (path / "model.safetensors.index.json").is_file()
++        )
++    except OSError:
++        return False
++
++
+ def resolve_model_dir() -> Path:
+-    manifest_path = MODEL_KAGGLE_PATH / "MODEL_MANIFEST.json"
+-    if not manifest_path.is_file():
++    """Locate the mounted Swift model (Kaggle lower-cases the framework)."""
++
++    mapped = input_paths().get(SWIFT_KAGGLE_MODEL_SOURCE)
++    owner, slug, framework, variation, version = SWIFT_KAGGLE_MODEL_SOURCE.split("/")
++    candidates = [
++        mapped,
++        SWIFT_MODEL_KAGGLE_PATH,
++        Path("/kaggle/input/models") / owner / slug / framework / variation / version,
++        Path("/kaggle/input") / slug / framework.lower() / variation / version,
++        Path("/kaggle/input") / slug,
++    ]
++    for candidate in candidates:
++        if _looks_like_swift_dir(candidate):
++            return candidate
++    matches = []
++    models_root = Path("/kaggle/input")
++    if models_root.is_dir():
++        for export in models_root.rglob("SWIFT_FP8_EXPORT.json"):
++            try:
++                value = read_json(export)
++            except Exception:
++                continue
++            if value.get("source_repo") == SWIFT_HF_SOURCE_REPO and _looks_like_swift_dir(
++                export.parent
++            ):
++                matches.append(export.parent)
++    if len(matches) != 1:
+         raise FileNotFoundError(
+-            f"Expected mounted {MODEL_HF_REPO}@{MODEL_HF_REVISION} at "
+-            f"{MODEL_KAGGLE_PATH}."
++            f"Expected mounted Kaggle model {SWIFT_KAGGLE_MODEL_SOURCE} at "
++            f"{SWIFT_MODEL_KAGGLE_PATH}; candidates={[str(c) for c in candidates if c]} "
++            f"matches={[str(m) for m in matches]}. Attach it as a notebook model source."
+         )
+-    value = read_json(manifest_path)
++    return matches[0]
++
++
++def verify_swift_source(swift_dir: Path, source_files: dict[str, Any]) -> dict[str, Any]:
++    """Cheap sanity check of the mounted Swift model: small-file hashes, shard sizes."""
++
++    started = time.monotonic()
++    expected_sizes = {str(k): int(v) for k, v in source_files["files"].items()}
++    missing: list[str] = []
++    wrong_size: list[str] = []
++    for name, size in expected_sizes.items():
++        path = swift_dir / name
++        try:
++            actual = path.stat().st_size
++        except OSError:
++            missing.append(name)
++            continue
++        if actual != size:
++            wrong_size.append(f"{name}:{actual}!={size}")
++    if missing or wrong_size:
++        raise RuntimeError(
++            f"Mounted Swift model is incomplete: missing={missing[:10]} "
++            f"(n={len(missing)}) wrong_size={wrong_size[:10]} (n={len(wrong_size)})"
++        )
++    hashed: dict[str, str] = {}
++    for name, expected_sha in source_files["small_file_sha256"].items():
++        actual_sha = sha256_file(swift_dir / name)
++        if actual_sha != expected_sha:
++            raise RuntimeError(f"Swift model file hash mismatch: {name} {actual_sha} != {expected_sha}")
++        hashed[name] = actual_sha
++    config = read_json(swift_dir / "config.json")
++    quantization = config.get("quantization_config") or {}
+     if (
+-        not isinstance(value, dict)
+-        or value.get("repo") != MODEL_HF_REPO
+-        or value.get("revision") != MODEL_HF_REVISION
++        config.get("architectures") != ["Qwen4ExpForConditionalGeneration"]
++        or config.get("model_type") != "qwen4_exp"
++        or quantization.get("quant_method") != "modelopt"
++        or quantization.get("quant_algo") != "MIXED_PRECISION"
+     ):
+-        raise RuntimeError(f"Mounted model identity is wrong at {MODEL_KAGGLE_PATH}.")
+-    return MODEL_KAGGLE_PATH
++        raise RuntimeError("Mounted Swift config is not the pinned qwen4_exp MIXED_PRECISION export.")
++    export = read_json(swift_dir / "SWIFT_FP8_EXPORT.json")
++    if export.get("source_repo") != SWIFT_HF_SOURCE_REPO:
++        raise RuntimeError(f"Mounted Swift export has the wrong source: {export.get('source_repo')}")
++    index = read_json(swift_dir / "model.safetensors.index.json")
++    shard_names = set(index.get("weight_map", {}).values())
++    absent = sorted(name for name in shard_names if name not in expected_sizes)
++    if absent:
++        raise RuntimeError(f"Swift index references unlisted shards: {absent[:10]}")
++    print(
++        f"SWIFT_MODEL_SANITY files={len(expected_sizes)} shards={len(shard_names)} "
++        f"bytes={sum(expected_sizes.values())} elapsed_s={time.monotonic() - started:.1f}",
++        flush=True,
++    )
++    return {
++        "path": str(swift_dir),
++        "kaggle_model_source": SWIFT_KAGGLE_MODEL_SOURCE,
++        "hf_source_repo": SWIFT_HF_SOURCE_REPO,
++        "file_count": len(expected_sizes),
++        "total_bytes": sum(expected_sizes.values()),
++        "shard_count": len(shard_names),
++        "small_file_sha256": hashed,
++        "weight_check": "stat_sizes_only",
++        "export": {
++            key: export.get(key)
++            for key in ("export_version", "source_repo", "mtp_source_repo", "nvidia_mtp_revision")
++        },
++    }
+ 
+ 
+-def verify_model(model_dir: Path, *, full_file_hashes: bool = True) -> dict[str, Any]:
+-    manifest_path = model_dir / "MODEL_MANIFEST.json"
+-    actual_manifest_sha = sha256_file(manifest_path)
+-    if actual_manifest_sha != MODEL_MANIFEST_SHA256:
+-        raise RuntimeError(
+-            f"Model manifest hash mismatch: {actual_manifest_sha} != {MODEL_MANIFEST_SHA256}"
+-        )
+-    manifest = read_json(manifest_path)
+-    if manifest.get("repo") != MODEL_HF_REPO or manifest.get("revision") != MODEL_HF_REVISION:
+-        raise RuntimeError("Mounted model provenance does not match the pinned checkpoint.")
+-    files = manifest.get("files")
+-    if not isinstance(files, list) or len(files) != MODEL_FILE_COUNT:
+-        raise RuntimeError(f"Expected {MODEL_FILE_COUNT} model files, found {len(files or [])}.")
++def _safetensors_header(path: Path) -> tuple[dict[str, Any], int]:
++    with path.open("rb") as handle:
++        prefix = handle.read(8)
++        if len(prefix) != 8:
++            raise RuntimeError(f"Truncated safetensors file: {path}")
++        (header_len,) = struct.unpack("<Q", prefix)
++        if header_len <= 0 or header_len > 64 * 1024 * 1024:
++            raise RuntimeError(f"Implausible safetensors header length {header_len}: {path}")
++        header = json.loads(handle.read(header_len))
++    return header, 8 + header_len
++
++
++def _fp8_e4m3fn_to_float32_table(np: Any) -> Any:
++    codes = np.arange(256, dtype=np.int64)
++    sign = np.where((codes >> 7) & 1, -1.0, 1.0)
++    exponent = (codes >> 3) & 0xF
++    mantissa = (codes & 0x7).astype(np.float64)
++    normal = (1.0 + mantissa / 8.0) * np.exp2(exponent.astype(np.float64) - 7.0)
++    subnormal = (mantissa / 8.0) * 2.0**-6
++    values = sign * np.where(exponent == 0, subnormal, normal)
++    values[(exponent == 0xF) & ((codes & 0x7) == 0x7)] = np.nan
++    return values.astype(np.float32)
++
++
++def _bf16_bits_to_float32(np: Any, bits: Any) -> Any:
++    return (bits.astype(np.uint32) << np.uint32(16)).view(np.float32)
++
++
++def _float32_to_bf16_bits(np: Any, values: Any) -> Any:
++    """Round-to-nearest-even float32 -> bfloat16 bit patterns (finite inputs)."""
++
++    if not np.isfinite(values).all():
++        raise RuntimeError("Non-finite value while dequantizing the MTP experts.")
++    bits = np.ascontiguousarray(values, dtype=np.float32).view(np.uint32)
++    rounding = np.uint32(0x7FFF) + ((bits >> np.uint32(16)) & np.uint32(1))
++    return ((bits + rounding) >> np.uint32(16)).astype(np.uint16)
++
++
++def dequantize_fp8_block(
++    np: Any,
++    table: Any,
++    weight_codes: Any,
++    scale_bits: Any,
++    block: int = SWIFT_MTP_BLOCK,
++) -> Any:
++    """ModelOpt FP8_PB_WO / DeepSeek weight_scale_inv: w = fp8 * scale per block."""
++
++    rows, cols = weight_codes.shape
++    expected = (-(-rows // block), -(-cols // block))
++    if tuple(scale_bits.shape) != expected:
++        raise RuntimeError(f"Unexpected block scale shape {scale_bits.shape} for {weight_codes.shape}")
++    scale = _bf16_bits_to_float32(np, scale_bits)
++    expanded = np.repeat(np.repeat(scale, block, axis=0), block, axis=1)[:rows, :cols]
++    return _float32_to_bf16_bits(np, table[weight_codes] * expanded)
++
++
++def convert_swift_mtp(
++    source: Path,
++    destination: Path,
++    *,
++    num_experts: int,
++    hidden_size: int,
++    intermediate_size: int,
++) -> dict[str, Any]:
++    """Rewrite NVIDIA's FP8 MTP file as the RadixArk-style bf16 MTP file.
++
++    Non-expert MTP tensors are copied byte-for-byte.  The per-expert FP8
++    gate/up/down weights and their block scales become two fused bf16 tensors:
++    gate_up_proj [E, 2I, H] (gate rows then up rows) and down_proj [E, H, I],
++    exactly the names, shapes and layout of the RadixArk checkpoint that this
++    runtime already loads for native MTP.
++    """
++
++    import numpy as np  # Kaggle's notebook image ships numpy.
++
++    started = time.monotonic()
++    header, data_start = _safetensors_header(source)
++    tensors = {name: row for name, row in header.items() if name != "__metadata__"}
++    expert_names = {name for name in tensors if name.startswith(SWIFT_MTP_EXPERT_PREFIX)}
++    expected_expert_names = {
++        f"{SWIFT_MTP_EXPERT_PREFIX}{expert}.{proj}.{suffix}"
++        for expert in range(num_experts)
++        for proj in ("gate_proj", "up_proj", "down_proj")
++        for suffix in ("weight", "weight_scale_inv")
++    }
++    if expert_names != expected_expert_names:
++        raise RuntimeError(
++            "Swift MTP expert tensor set mismatch: "
++            f"extra={sorted(expert_names - expected_expert_names)[:5]} "
++            f"missing={sorted(expected_expert_names - expert_names)[:5]}"
++        )
++    verbatim = sorted(name for name in tensors if name not in expert_names)
++    for name in verbatim:
++        if not name.startswith("mtp.") or tensors[name]["dtype"] != "BF16":
++            raise RuntimeError(f"Unexpected non-expert MTP tensor {name}: {tensors[name]}")
++
++    def _row(name: str) -> tuple[int, int, list[int], str]:
++        row = tensors[name]
++        start, end = (int(x) for x in row["data_offsets"])
++        return data_start + start, end - start, [int(x) for x in row["shape"]], row["dtype"]
++
++    gate_up_shape = [num_experts, 2 * intermediate_size, hidden_size]
++    down_shape = [num_experts, hidden_size, intermediate_size]
++    out_rows: list[tuple[str, str, list[int], int]] = []
++    for name in verbatim:
++        _, length, shape, dtype = _row(name)
++        out_rows.append((name, dtype, shape, length))
++    out_rows.append((SWIFT_MTP_FUSED_DOWN, "BF16", down_shape, 2 * math.prod(down_shape)))
++    out_rows.append((SWIFT_MTP_FUSED_GATE_UP, "BF16", gate_up_shape, 2 * math.prod(gate_up_shape)))
++    out_rows.sort(key=lambda item: item[0])
++    out_header: dict[str, Any] = {"__metadata__": {"format": "pt"}}
++    offset = 0
++    for name, dtype, shape, length in out_rows:
++        out_header[name] = {"dtype": dtype, "shape": shape, "data_offsets": [offset, offset + length]}
++        offset += length
++    header_bytes = json.dumps(out_header, separators=(",", ":")).encode("utf-8")
++    header_bytes += b" " * (-len(header_bytes) % 8)
++    total_bytes = 8 + len(header_bytes) + offset
++    if total_bytes > SWIFT_MTP_STAGED_BOUND_BYTES:
++        raise RuntimeError(f"Staged MTP file would exceed its bound: {total_bytes}")
++
++    table = _fp8_e4m3fn_to_float32_table(np)
++    expected_weight_shapes = {
++        "gate_proj": [intermediate_size, hidden_size],
++        "up_proj": [intermediate_size, hidden_size],
++        "down_proj": [hidden_size, intermediate_size],
++    }
++
++    def _expert(handle: Any, expert: int, proj: str) -> Any:
++        w_off, w_len, w_shape, w_dtype = _row(f"{SWIFT_MTP_EXPERT_PREFIX}{expert}.{proj}.weight")
++        s_off, s_len, s_shape, s_dtype = _row(
++            f"{SWIFT_MTP_EXPERT_PREFIX}{expert}.{proj}.weight_scale_inv"
++        )
++        if w_dtype != "F8_E4M3" or s_dtype != "BF16" or w_shape != expected_weight_shapes[proj]:
++            raise RuntimeError(f"Unexpected MTP expert {expert}.{proj}: {w_dtype} {w_shape} {s_dtype}")
++        handle.seek(w_off)
++        codes = np.frombuffer(handle.read(w_len), dtype=np.uint8).reshape(w_shape)
++        handle.seek(s_off)
++        scales = np.frombuffer(handle.read(s_len), dtype=np.uint16).reshape(s_shape)
++        return dequantize_fp8_block(np, table, codes, scales)
++
++    destination.parent.mkdir(parents=True, exist_ok=True)
++    temporary = destination.with_name(f".{destination.name}.partial")
++    written = 0
+     try:
+-        total = sum(int(row["size"]) for row in files)
+-    except (KeyError, TypeError, ValueError) as exc:
+-        raise RuntimeError("Model manifest file metadata is invalid.") from exc
+-    if total != MODEL_TOTAL_BYTES or total != int(manifest.get("total_bytes", -1)):
+-        raise RuntimeError(f"Model byte total mismatch: {total} != {MODEL_TOTAL_BYTES}")
+-
+-    hashed_files = 0
+-    hashed_bytes = 0
+-    stat_only_weight_files = 0
+-    stat_only_weight_bytes = 0
+-    payload_files_checked = 0
++        with source.open("rb") as src, temporary.open("wb") as dst:
++            dst.write(struct.pack("<Q", len(header_bytes)))
++            dst.write(header_bytes)
++            for name, _dtype, _shape, length in out_rows:
++                if name == SWIFT_MTP_FUSED_DOWN:
++                    for expert in range(num_experts):
++                        dst.write(_expert(src, expert, "down_proj").tobytes())
++                elif name == SWIFT_MTP_FUSED_GATE_UP:
++                    for expert in range(num_experts):
++                        dst.write(_expert(src, expert, "gate_proj").tobytes())
++                        dst.write(_expert(src, expert, "up_proj").tobytes())
++                else:
++                    src_off, src_len, _, _ = _row(name)
++                    src.seek(src_off)
++                    payload = src.read(src_len)
++                    if len(payload) != length:
++                        raise RuntimeError(f"Short read for MTP tensor {name}")
++                    dst.write(payload)
++                written += length
++            dst.flush()
++            os.fsync(dst.fileno())
++        if temporary.stat().st_size != total_bytes or written != offset:
++            raise RuntimeError(
++                f"Staged MTP size mismatch: {temporary.stat().st_size} != {total_bytes}"
++            )
++        os.replace(temporary, destination)
++    finally:
++        temporary.unlink(missing_ok=True)
++    elapsed = time.monotonic() - started
++    print(
++        f"SWIFT_MTP_STAGED experts={num_experts} tensors_in={len(tensors)} "
++        f"tensors_out={len(out_rows)} bytes={total_bytes} elapsed_s={elapsed:.1f}",
++        flush=True,
++    )
++    return {
++        "source": str(source),
++        "destination": str(destination),
++        "source_tensor_count": len(tensors),
++        "verbatim_tensor_count": len(verbatim),
++        "dequantized_expert_count": num_experts,
++        "output_tensor_count": len(out_rows),
++        "output_bytes": total_bytes,
++        "output_names": [row[0] for row in out_rows if "experts" in row[0]],
++        "elapsed_seconds": elapsed,
++    }
++
++
++def stage_swift_model(swift_dir: Path, staging: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
++    """Build the RadixArk-compatible symlink tree that vLLM serves."""
++
+     started = time.monotonic()
+-    if full_file_hashes:
+-        for index, row in enumerate(files, start=1):
+-            relative = str(row["path"])
+-            path = model_dir / relative
+-            expected_size = int(row["size"])
+-            if not path.is_file() or path.stat().st_size != expected_size:
+-                raise RuntimeError(f"Missing or wrong-sized model file: {path}")
+-            actual_sha = sha256_file(path)
+-            if actual_sha != str(row["sha256"]):
+-                raise RuntimeError(f"Model file hash mismatch: {relative}")
+-            hashed_files += 1
+-            hashed_bytes += expected_size
+-            payload_files_checked += 1
+-            if index == len(files) or index % 25 == 0:
+-                print(
+-                    f"MODEL_VERIFY files={index}/{len(files)} bytes={hashed_bytes} "
+-                    f"elapsed_s={time.monotonic() - started:.1f}",
+-                    flush=True,
+-                )
+-    else:
+-        print(
+-            f"MODEL_IDENTITY_ONLY files={len(files)} bytes={total} "
+-            "payload_check=vllm_load",
+-            flush=True,
+-        )
++    staged = SWIFT_STAGED_MODEL_DIR
++    if staged.is_symlink():
++        raise RuntimeError(f"The staged model root must not be a symlink: {staged}")
++    probe = staged.parent
++    free_bytes = int(os.statvfs(probe).f_bavail * os.statvfs(probe).f_frsize)
++    if free_bytes < SWIFT_MTP_STAGED_BOUND_BYTES + 1024**3:
++        raise RuntimeError(
++            f"Too little space in {probe} to stage the Swift MTP head: {free_bytes} bytes free."
++        )
++    if staged.exists():
++        shutil.rmtree(staged)
++    staged.mkdir(parents=True)
++    linked = []
++    for entry in sorted(swift_dir.iterdir()):
++        if entry.name in SWIFT_STAGE_REPLACED or entry.name in SWIFT_STAGE_SKIPPED:
++            continue
++        if not entry.is_file():
++            continue
++        (staged / entry.name).symlink_to(entry)
++        linked.append(entry.name)
++    staging_dir = staging["directory"]
++    shutil.copyfile(staging_dir / "staged_config.json", staged / "config.json")
++    shutil.copyfile(staging_dir / "staged_hf_quant_config.json", staged / "hf_quant_config.json")
++
++    staged_config = read_json(staged / "config.json")
++    text_config = staged_config["text_config"]
++    swift_text_config = read_json(swift_dir / "config.json")["text_config"]
++    if staged_config.get("text_config") != swift_text_config:
++        raise RuntimeError("Swift and staged text configs differ; refusing to stage.")
++    mtp = convert_swift_mtp(
++        swift_dir / SWIFT_MTP_SOURCE_FILE,
++        staged / SWIFT_MTP_STAGED_FILE,
++        num_experts=int(text_config["num_experts"]),
++        hidden_size=int(text_config["hidden_size"]),
++        intermediate_size=int(text_config["moe_intermediate_size"]),
++    )
++
++    source_index = read_json(swift_dir / "model.safetensors.index.json")
++    weight_map = {
++        name: shard
++        for name, shard in source_index["weight_map"].items()
++        if shard != SWIFT_MTP_SOURCE_FILE
++    }
++    staged_header, _ = _safetensors_header(staged / SWIFT_MTP_STAGED_FILE)
++    for name in staged_header:
++        if name != "__metadata__":
++            weight_map[name] = SWIFT_MTP_STAGED_FILE
++    missing = sorted({shard for shard in weight_map.values() if not (staged / shard).is_file()})
++    if missing:
++        raise RuntimeError(f"Staged index references missing shards: {missing[:10]}")
++    total_size = int(source_index.get("metadata", {}).get("total_size", 0))
++    total_size += mtp["output_bytes"] - (swift_dir / SWIFT_MTP_SOURCE_FILE).stat().st_size
++    write_json(
++        staged / "model.safetensors.index.json",
++        {"metadata": {"total_size": total_size}, "weight_map": dict(sorted(weight_map.items()))},
++    )
++    record = {
++        "staged_model_dir": str(staged),
++        "swift_model_dir": str(swift_dir),
++        "linked_files": len(linked),
++        "replaced": sorted(SWIFT_STAGE_REPLACED),
++        "config_sha256": sha256_file(staged / "config.json"),
++        "hf_quant_config_sha256": sha256_file(staged / "hf_quant_config.json"),
++        "index_sha256": sha256_file(staged / "model.safetensors.index.json"),
++        "index_tensor_count": len(weight_map),
++        "mtp": mtp,
++        "elapsed_seconds": time.monotonic() - started,
++    }
++    write_json(staged / "SWIFT_STAGING.json", record)
++    print(
++        f"SWIFT_STAGED_MODEL {staged} linked={len(linked)} tensors={len(weight_map)} "
++        f"elapsed_s={record['elapsed_seconds']:.1f}",
++        flush=True,
++    )
++    return staged, record
+ 
++
++def verify_model(model_dir: Path, *, full_file_hashes: bool = True) -> dict[str, Any]:
++    """Check the staged model with the original RadixArk config gates.
++
++    The RadixArk MODEL_MANIFEST checks are gone (the Swift upload has no
++    manifest); verify_swift_source already checked sizes and small-file hashes.
++    """
++
++    started = time.monotonic()
++    del full_file_hashes
+     config_path = model_dir / "config.json"
+     quant_path = model_dir / "hf_quant_config.json"
+     if sha256_file(config_path) != MODEL_CONFIG_SHA256:
+-        raise RuntimeError("Pinned model config hash does not match.")
++        raise RuntimeError("Staged model config hash does not match the pinned PLE gate config.")
+     if sha256_file(quant_path) != MODEL_QUANT_CONFIG_SHA256:
+-        raise RuntimeError("Pinned ModelOpt quantization config hash does not match.")
++        raise RuntimeError("Staged ModelOpt quantization config hash does not match.")
+     config = read_json(config_path)
+     quant = read_json(quant_path)
+     text_config = config.get("text_config") or {}
+@@ -741,27 +1172,36 @@
+         or int((text_config.get("mtp") or {}).get("num_hidden_layers", -1)) != 1
+     ):
+         raise RuntimeError("The pinned FP8 PLE or native MTP identity does not match.")
+-    for name in ("model.safetensors.index.json", "chat_template.jinja"):
++    for name in ("model.safetensors.index.json", "chat_template.jinja", SWIFT_MTP_STAGED_FILE):
+         if not (model_dir / name).is_file():
+-            raise RuntimeError(f"Incomplete checkpoint; missing {name}")
++            raise RuntimeError(f"Incomplete staged checkpoint; missing {name}")
++    index = read_json(model_dir / "model.safetensors.index.json")
++    weight_map = index.get("weight_map", {})
++    for required in (
++        "model.language_model.layers.1.ple.ple_embedding.ngram_embedding.weight_scale",
++        "model.language_model.layers.1.ple.ple_embedding.ngram_embedding.shard_0.weight",
++        SWIFT_MTP_FUSED_GATE_UP,
++        SWIFT_MTP_FUSED_DOWN,
++        "lm_head.weight",
++    ):
++        if required not in weight_map:
++            raise RuntimeError(f"Staged index is missing {required}")
++    if any(name.endswith("weight_scale_inv") for name in weight_map):
++        raise RuntimeError("Staged index still references block-FP8 MTP scales.")
++    shards = sorted(set(weight_map.values()))
+     return {
+-        "manifest_sha256": actual_manifest_sha,
++        "staged_model_dir": str(model_dir),
+         "config_sha256": MODEL_CONFIG_SHA256,
+         "quant_config_sha256": MODEL_QUANT_CONFIG_SHA256,
+-        "file_count": len(files),
+-        "total_bytes": total,
++        "shard_count": len(shards),
++        "tensor_count": len(weight_map),
+         "architecture": config["architectures"][0],
+         "quant_algo": quantization["quant_algo"],
+         "ple_embedding_dtype": text_config["ple_embedding_dtype"],
+         "mtp_num_hidden_layers": text_config["mtp_num_hidden_layers"],
+-        "payload_sha256_verified": full_file_hashes,
+-        "hashed_file_count": hashed_files,
+-        "hashed_bytes": hashed_bytes,
+-        "stat_only_weight_file_count": stat_only_weight_files,
+-        "stat_only_weight_bytes": stat_only_weight_bytes,
+-        "payload_files_checked": payload_files_checked,
+-        "payload_check_deferred_to_vllm_load": not full_file_hashes,
+-        "verification_mode": "full" if full_file_hashes else "identity-only",
++        "payload_sha256_verified": False,
++        "payload_check_deferred_to_vllm_load": True,
++        "verification_mode": "swift-staged-config",
+         "verify_seconds": time.monotonic() - started,
+     }
+ 
+@@ -2965,17 +3405,25 @@
+         flush=True,
+     )
+     source_identity()
++    staging_payload = swift_staging_payload()
+     inventory = gpu_inventory()
+     runtime_dir = resolve_runtime_dir()
+-    model_dir = resolve_model_dir()
++    swift_dir = resolve_model_dir()
+     print(f"PINNED_VLLM_RUNTIME_PATH {runtime_dir}", flush=True)
+-    print(f"PINNED_MODEL_PATH {model_dir}", flush=True)
++    print(f"SWIFT_MODEL_PATH {swift_dir}", flush=True)
++    swift_check = verify_swift_source(swift_dir, staging_payload["source_files"])
+     storage_check = validate_runtime_storage()
+-    runtime_check = verify_and_extract_runtime(
+-        runtime_dir,
+-        full_layer_hashes=not fast_start,
+-        scan_extracted_caches=not fast_start,
+-    )
++    # The MTP rewrite is CPU/IO bound numpy work; overlap it with the runtime
++    # layer extraction instead of adding it to the critical path.
++    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as staging_pool:
++        staging_future = staging_pool.submit(stage_swift_model, swift_dir, staging_payload)
++        runtime_check = verify_and_extract_runtime(
++            runtime_dir,
++            full_layer_hashes=not fast_start,
++            scan_extracted_caches=not fast_start,
++        )
++        model_dir, staging_check = staging_future.result()
++    print(f"PINNED_MODEL_PATH {model_dir}", flush=True)
+     ple_patch = patch_ple_layer()
+     env, environment_check = runtime_environment(
+         deep_preload_validation=not fast_start,
+@@ -3030,8 +3478,10 @@
+         "source_dataset": SOURCE_DATASET,
+         "source_identity_sha256": sha256_file(BUNDLE_DIR / "SOURCE_IDENTITY.json"),
+         "runtime_dataset": RUNTIME_DATASET,
+-        "model_hf_repo": MODEL_HF_REPO,
+-        "model_hf_revision": MODEL_HF_REVISION,
++        "model_kaggle_source": SWIFT_KAGGLE_MODEL_SOURCE,
++        "model_hf_source_repo": SWIFT_HF_SOURCE_REPO,
++        "swift_model": swift_check,
++        "swift_staging": staging_check,
+         "vllm_image": VLLM_IMAGE,
+         "vllm_index_digest": VLLM_INDEX_DIGEST,
+         "vllm_version": VLLM_VERSION,
