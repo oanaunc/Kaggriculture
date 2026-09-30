@@ -11,6 +11,7 @@ Public 25 games, one run each, same model (Qwen3.8 Flash Next NVFP4), 132 min/ga
 | Ours v2 (rerun) | 2026-09-27 | 6.77 | 36 | - | identical code; run-to-run noise ~±1 point. v2 mean of 2 runs = 7.41 vs public mean 6.27 |
 | Ours v5 | 2026-09-28 | 10.34 | 44 | 3 | v2 + reallocation, stall-stop only after first level (10 games stalled). g50t first level ever, tr87 4 levels. Best so far; submit 2026-09-29; rerun pushed. |
 | Ours v5 (rerun) | 2026-09-28 | 7.35 | 39 | 2 | identical code; v5 mean of 2 = 8.85 (v2 mean 7.41, public mean 6.27). Noise ~±1.5. |
+| Swift (v6 harness + Swift 1.5 model) | 2026-09-30 | 7.32 | 35 | 5 | model loads via staged view (SWIFT_MODEL_SANITY ok, VLLM_SETUP_COMPLETE). MTP acceptance 0.667 (v5: 0.596), requests 1333 (v5: 1214), gen tokens ~= same. Within noise of v5 on public-25. |
 | Ours v4 | 2026-09-28 | 7.02 | 30 | 8 | v2 + stall stop 4500 s / progress extension. Stall fired in 20/25 games: freed GPU helped some (sk48 first level ever, lp85 5 levels) but killed level-1 progress in sc25/cn04/cd82. Extension untestable in single-wave public eval. Not submitted. Next: stall only after >=1 level or longer level-1 window. |
 | Ours v3 | 2026-09-27 | 5.71 | 31 | 6 | v2 + keep reasoning only for newest turn -> worse; reverted (DUCK_KEEP_REASONING_TURNS=-1 default) |
 
@@ -41,3 +42,8 @@ i.e. exactly what the public evaluation measured. Commit runs now use ARC3_QUICK
 ### 2026-09-30: LB vs public-25
 LB scores of all versions (3.42, 3.66, 2.53, 3.33) lie within ~±0.5 of each other, while public-25 means moved 6.3 -> 8.9.
 Public-25 gains do not transfer measurably to the hidden LB games; LB run-to-run noise (~±0.5) dominates.
+
+## Next submissions (plan, updated 2026-09-30 18:10 UTC)
+- 2026-10-01 ARC-AGI-3: Swift kernel, already fully run: `kaggle competitions submit arc-prize-2026-arc-agi-3 -k oanaunciuleanu/arc3-duck-ours-swift -v 1 -f submission.parquet -m "swift: v6 harness + Swift 1.5 model"` (LB is the real test; public-25 does not predict LB).
+- 2026-10-01 Gemma: gemma/dist/submission_v4.zip (0.12 base + coder tail-output line), uploaded as submission.zip.
+- 2026-10-01 ARC-AGI-2: only if v2 (probmul_3) scores; otherwise nothing.
