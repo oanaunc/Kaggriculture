@@ -33,7 +33,7 @@ for repo in ("ARC3-Inference", "tufa-arc-agi-framework"):
     shutil.copytree(REPO / "arc3" / "solver" / repo, ds / "src" / repo, ignore=shutil.ignore_patterns("__pycache__"))
 (ds / "OURS_VERSION.txt").write_text(tag + "\n")
 (ds / "dataset-metadata.json").write_text(json.dumps({
-    "title": "arc3 duck ours src",
+    "title": DATASET_SLUG.replace("-", " "),
     "id": f"{USER}/{DATASET_SLUG}",
     "licenses": [{"name": "MIT"}],
 }, indent=1))
