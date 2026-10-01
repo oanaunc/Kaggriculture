@@ -200,3 +200,5 @@ It is not a big accuracy jump. The credible accuracy levers from the scouting re
 |---|---|---|---|---|
 | 2026-09-27 | v1 | ran cleanly, exit codes [0,0,0,0], model-only = final = 2.5/4 (base 3.0/4; the difference is 36a08778 test 1, found by a single augmented beam in the base run: seed variance) | 56617135 | pending |
 | 2026-09-30 | v2 | commit run clean (exit [0,0,0,0], selector score_full_probmul_3, 2.5/4 on the 4-task check) | submitted 16:0x UTC | pending |
+| 2026-10-01 | v2 result | - | 56712633 | 25.97 (probmul_3 selector; v1 kgmon 28.61) -> within the ±3 rerun band, no evidence probmul_3 helps; default back to kgmon for future versions |
+| 2026-10-01 | v1 resubmit | - | (see API) | pending (variance measurement) |

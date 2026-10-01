@@ -2107,7 +2107,7 @@ try:
     # [ours v2] selector: score_full_probmul_3 (medvax reports 29.17 vs 28.33 for
     # score_kgmon on the 120-task eval); override with ARC_SELECTOR=score_kgmon.
     import arc_decoder as _ad
-    _selector = getattr(_ad, os.environ.get("ARC_SELECTOR", "score_full_probmul_3"), _ad.score_full_probmul_3)
+    _selector = getattr(_ad, os.environ.get("ARC_SELECTOR", "score_kgmon"), _ad.score_kgmon)
     print("*** selection algorithm:", _selector.__name__)
     model_ranked = decoder.run_selection_algo(_selector)
 except Exception:
