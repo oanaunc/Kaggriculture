@@ -48,3 +48,10 @@ Public-25 gains do not transfer measurably to the hidden LB games; LB run-to-run
 - 2026-10-01 ARC-AGI-3: Swift kernel, already fully run: `kaggle competitions submit arc-prize-2026-arc-agi-3 -k oanaunciuleanu/arc3-duck-ours-swift -v 1 -f submission.parquet -m "swift: v6 harness + Swift 1.5 model"` (LB is the real test; public-25 does not predict LB).
 - 2026-10-01 Gemma: gemma/dist/submission_v4.zip (0.12 base + coder tail-output line), uploaded as submission.zip.
 - 2026-10-01 ARC-AGI-2: only if v2 (probmul_3) scores; otherwise nothing.
+
+## 2026-10-01 check-in
+- LB: Swift (56732275) = **2.23** (v2 3.66 remains best). Swift model does not help on hidden games; drop it.
+- Milestone-2 releases: **Daniel Franzen (LB 27.24) published full solution** `dfranzen/arc-agi-3-milestone-2-solution`; Lord Han Solo (23.84) published `lordhansolo/arc-agi-3-milestone-2`.
+- Franzen = Duck @7652836 + 500 KB harness patch (16 files, ~5.3k lines in tool_agent), Intel AutoRound W4A16 Qwen3.8-Flash-Next + albucino MTP drafter on Pennyroyal SGLang fork, 128k context, memory sections OFF (long-context history instead), priority scheduler over all 110 games (10 active streams), UNDO exposed, animation/diff images, guards from level 2, persistent functions.
+- Already covers our fixes (animations, tolerant headers, wipe controls, stale game-over); our harness is dominated. Models are Qwen Community License (same as current).
+- Plan: private fork `arc3/franzen_fork/` (kernel `oanaunciuleanu/arc3-franzen-ours`) -> test run -> LB baseline -> one evidence-backed change per day. Kaggle push of the fork is pending user approval.
