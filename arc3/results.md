@@ -58,3 +58,9 @@ Public-25 gains do not transfer measurably to the hidden LB games; LB run-to-run
 - Fork test run (kernel `oanaunciuleanu/arc3-franzen-ours` v1, non-submission mode: 10 public games x 25 min, the 15 hardest excluded by Franzen's demo list): **mean 46.32**, 49/72 levels, ft09 6/6, 0 tracebacks, 560 gen tok/s. Pipeline works on our account. Not comparable to our public-25 numbers (easier subset, different budget).
 - Plan: submit v1 unchanged at the 2026-10-02 00:12 daily cycle as our LB reference; then one change per day.
 - 2026-10-02 00:13: submitted franzen-fork v1 (unchanged) to LB.
+
+## 2026-10-02
+- **franzen-fork v1 LB = 29.28** (Franzen's own 27.24; writeup claims 27.89). Rank 59/3585 (was 624). Cluster of Franzen forks spans ~26-32 -> LB noise at this level ≈ ±3.
+- Tufa Labs now 52.51, Yi-Chia Chen 48.07 (private). Lord Han Solo's new public notebook is his own vLLM line (23.84 best), not better.
+- Franzen writeup (dfranzen/arc-agi-3-milestone-2): world model off, 10x images, animations, UNDO, guards = his wins; summarisation/death ledger/extra guards/pace = no clear gain. Only stated open lever: **token throughput** ("scores still improving near the end of runs"). Run already uses ~532 min of the 540 min limit, so no free wall-clock.
+- Plan: (a) 2026-10-03 resubmit v1 unchanged = second draw to measure noise; (b) throughput A/B on the 10-game demo (metric: gen tok/s and levels, both far less noisy than LB) once weekly GPU quota resets — candidates SPEC_STEPS 3->4, CUDAGRAPH/MAXREQ, prefill chunk; ship only a measured tok/s gain.
