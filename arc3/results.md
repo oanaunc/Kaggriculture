@@ -57,3 +57,4 @@ Public-25 gains do not transfer measurably to the hidden LB games; LB run-to-run
 - Plan: private fork `arc3/franzen_fork/` (kernel `oanaunciuleanu/arc3-franzen-ours`) -> test run -> LB baseline -> one evidence-backed change per day. Kaggle push of the fork is pending user approval.
 - Fork test run (kernel `oanaunciuleanu/arc3-franzen-ours` v1, non-submission mode: 10 public games x 25 min, the 15 hardest excluded by Franzen's demo list): **mean 46.32**, 49/72 levels, ft09 6/6, 0 tracebacks, 560 gen tok/s. Pipeline works on our account. Not comparable to our public-25 numbers (easier subset, different budget).
 - Plan: submit v1 unchanged at the 2026-10-02 00:12 daily cycle as our LB reference; then one change per day.
+- 2026-10-02 00:13: submitted franzen-fork v1 (unchanged) to LB.

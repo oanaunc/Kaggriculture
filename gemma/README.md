@@ -231,3 +231,4 @@ The v1 extras are not carried over. v1 bundled all of them and scored half of R1
 | 2026-09-29 | r12base | 56656630 | 0.12 | Exact public base reproduces 0.12, so v2's deltas (0.08) hurt. | Exact reproduction of the public 0.12 bundle (gemma/submission_r12base) to calibrate LB noise vs our deltas. |
 | 2026-09-30 | v3 | 56691693 | 0.08 | Cap is not the cause: the prompt lines cost ~0.04 (likely the analyzer search_similar_code ban, which the 0.12 base relies on). |
 | 2026-10-01 | v4 | 56732279 | ERROR | 'notebook hit an unhandled error while rerunning'; only a 1-line prompt diff vs the 0.12 base, host is changing the harness. Resubmit to check. | 0.12 base + only the coder tail-output line (analyzer untouched, no bans). |
+- 2026-10-02: resubmitted v4 unchanged to see whether the "unhandled error while rerunning" repeats.
