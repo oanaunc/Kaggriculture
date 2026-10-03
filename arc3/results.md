@@ -64,3 +64,7 @@ Public-25 gains do not transfer measurably to the hidden LB games; LB run-to-run
 - Tufa Labs now 52.51, Yi-Chia Chen 48.07 (private). Lord Han Solo's new public notebook is his own vLLM line (23.84 best), not better.
 - Franzen writeup (dfranzen/arc-agi-3-milestone-2): world model off, 10x images, animations, UNDO, guards = his wins; summarisation/death ledger/extra guards/pace = no clear gain. Only stated open lever: **token throughput** ("scores still improving near the end of runs"). Run already uses ~532 min of the 540 min limit, so no free wall-clock.
 - Plan: (a) 2026-10-03 resubmit v1 unchanged = second draw to measure noise; (b) throughput A/B on the 10-game demo (metric: gen tok/s and levels, both far less noisy than LB) once weekly GPU quota resets — candidates SPEC_STEPS 3->4, CUDAGRAPH/MAXREQ, prefill chunk; ship only a measured tok/s gain.
+
+## 2026-10-03
+- Submitted franzen-fork v1 rerun (56785063) to measure LB noise.
+- Launched throughput test `oanaunciuleanu/arc3-franzen-spec4` (only change: SPEC_STEPS 3->4). Compare gen tok/s vs v1 demo (560.22) and levels (49/72).
