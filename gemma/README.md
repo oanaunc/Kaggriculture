@@ -234,3 +234,4 @@ The v1 extras are not carried over. v1 bundled all of them and scored half of R1
 - 2026-10-02: resubmitted v4 unchanged to see whether the "unhandled error while rerunning" repeats.
 - v4 resubmit = **0.08** (no error this time). The tail-output line does not help (0.08 vs base 0.12).
 - 2026-10-03: resubmitted r12base unchanged to measure run-to-run noise of the 0.12 base.
+- r12base rerun = **0.08** (first run 0.12). Same zip -> LB noise ≈ ±0.04 (~2 tasks). So v2/v3/v4 (0.08) are NOT shown to be worse than the base; all our Gemma variants are within noise.
