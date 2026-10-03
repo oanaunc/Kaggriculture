@@ -68,3 +68,4 @@ Public-25 gains do not transfer measurably to the hidden LB games; LB run-to-run
 ## 2026-10-03
 - Submitted franzen-fork v1 rerun (56785063) to measure LB noise.
 - Launched throughput test `oanaunciuleanu/arc3-franzen-spec4` (only change: SPEC_STEPS 3->4). Compare gen tok/s vs v1 demo (560.22) and levels (49/72).
+- spec4 test FAILED at server start: `NotImplementedError: Qwen QSA requires speculative_num_draft_tokens <= the QSA compress ratio (4)` -> SPEC_STEPS=3 (4 draft tokens) is already the hard maximum for this model/kernel. Not a lever. (v1 demo: mean accept length 2.71 of 4, decode ~665 tok/s.) Cost ~35 min GPU (weights load took ~30 min).
