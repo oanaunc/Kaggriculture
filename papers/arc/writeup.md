@@ -1,81 +1,75 @@
 # Fixing the Harness, Not the Model
-### Failure analysis and targeted harness fixes for a small-LLM ARC-AGI-3 agent
+### What a small team learned auditing, measuring and hardening open ARC-AGI-3 agents
 
-> DRAFT — numbers marked **[TBD]** are filled in when the pending leaderboard and evaluation runs finish.
-> Track: ARC-AGI-3. Leaderboard submission ID: 56605759 (v1, public LB 3.42) **[TBD: final ID]**. Code: public notebook **[TBD link]**.
+> DRAFT — **[TBD]** marks numbers filled in when pending runs finish.
+> Track: ARC-AGI-3. Leaderboard submission: **[TBD: final ID]** (current best 29.28). Code: public notebook **[TBD link]**.
 
 ## 1. Summary
 
-Small open models driving a Python tool (the "Duck" harness by Tufa Labs, here with Qwen 3.8 on one RTX Pro 6000) play ARC-AGI-3 games but score only ~6% on the public games. We asked a narrower question than "which model or prompt": **how much of the failure is caused by the harness rather than the model's reasoning?** Parsing 50 full transcripts (25 public games × 2 public runs) and checking blocked games against their source code, we found harness defects that silently corrupt what the model sees or remembers. Fixing them made three games that scored zero in both reference runs (sp80, tn36, dc22) complete levels in every one of our runs, with the same model, sampling and budget. Reallocating compute from games stuck after their first level to games still progressing gave the largest further gain: 8.85 mean over two runs versus 6.27 for the reference. We also report two ideas that did not work, since with large run-to-run variance negative results are informative.
+Every competitive ARC-AGI-3 entry on Kaggle is the same shape: a small open model (Qwen 3.8 Flash-Next on one RTX Pro 6000) driving a Python tool harness (Tufa Labs' "Duck"). We asked how much of such an agent's behaviour is decided by the harness rather than by the model, and what that means for anyone trying to improve one with a budget of one leaderboard submission per day.
 
-The contribution is a transcript-driven method for auditing agent harnesses and a set of general, model-agnostic fixes that apply to any tool-using agent operating an interactive environment.
+We report three findings.
+1. **Harness defects are large and invisible.** Auditing 50 transcripts of the public Duck agent, we found that the model was routinely shown false or incomplete state: a stale "game over" after auto-reset, animation-only mechanics it never saw, ~70% of its memory notes silently dropped by a parser, and a context budget that over-counted images ~25×. Fixing these made three games that scored zero in every reference run complete levels in every one of ours, with the same model.
+2. **Offline gains did not transfer.** Our best harness raised the public-game mean from 6.27 to 8.85, but every version scored within ±0.5 of each other on the hidden leaderboard (3.33–3.66). Public games are too few and too different to select harness changes.
+3. **The binding risk at the top is reliability, not reasoning.** After adopting the strongest public solution (Daniel Franzen's Milestone-2 notebook) we scored 29.28; resubmitting the *identical* notebook scored **0.00**. Model-weight loading took 1,779 s instead of 321 s on that machine, and every game exhausted its connection grace period before the server came up. A one-line change makes the agent tolerate this. **[TBD: score of the hardened version]**
 
 ## 2. Setting
 
-Each ARC-AGI-3 game is a 64×64, 16-colour interactive environment with hidden rules and several levels. Score per level is min(1, human_actions / agent_actions)², weighted by level index. Kaggle provides 9 hours on one RTX Pro 6000 for 110 hidden games; the harness plays 28 games concurrently with a 132-minute wall budget each.
+Each ARC-AGI-3 game is a 64×64, 16-colour interactive environment with hidden rules and several levels. Score per level is min(1, human_actions / agent_actions)², weighted by level. Kaggle runs 110 hidden games in 9 hours on one GPU, offline. The Duck exposes the game to the model as Python variables plus an `action(...)` function, attaches a board image to each turn and keeps a rolling context.
 
-The Duck exposes the game to the model as Python variables (current frame as ASCII and a connected-component segmentation, history, transitions) plus an `action(...)` function, attaches a 4× upscaled image of the board to each turn, keeps a rolling 32k-token context, and asks the model to maintain a labelled "world model" note that the harness carries between turns.
+## 3. Part I — Auditing the public harness
 
-## 3. Method: transcript audit
+We parsed the transcripts and benchmark records of two public reference runs (25 games each) and measured, per game, levels, actions vs. human baseline, LLM calls and latency, the presence of the carried memory note, and every harness message shown to the model. For the five games that scored zero in both runs we compared the model's stated beliefs with the game source.
 
-We wrote parsers over the transcripts and the benchmark records to measure, per game: levels completed, actions vs human baseline, LLM calls and their latency, time between consecutive actions, how often the carried world-model note was present, and every harness message shown to the model. For the five games that scored zero in both runs we compared the model's stated beliefs with the game's source code.
+1. **The binding constraint is LLM calls, not actions.** Each game used its whole 132-min budget on ~55 calls; on levels it solved, the agent matched human action counts (median 0.82–0.88×). 61–64% of time went to the final, never-solved level.
+2. **Stale terminal state.** After auto-reset the next prompt still said "The game is over." (207 prompts), while the system prompt says to stop on game over; one run of dc22 idled for 65 min.
+3. **Invisible mechanics.** Only the last frame of each action was kept. In sp80 an effect visible only mid-animation led the model to conclude "SPACE is a no-op". Animation-only effects occur in 12 of 25 games.
+4. **Lost memory.** The note parser matched only the literal `World model:`; the model wrote `World model (revised):`, so the carried model was empty on 47–49% of turns, and it was also wiped at every level transition.
+5. **Context mis-budgeting.** Images were counted by base64 length (~2.5k "tokens" instead of ~100), so the 32k window held ~8 calls; a 60 s turn budget shorter than one LLM call re-sent the full prompt nearly every turn.
 
-Findings (both reference runs, 50 game-runs):
+We fixed each defect without game-specific logic (truthful terminal state, an animation summary, tolerant note parsing, knowledge carry-over across levels, fixed vision-token cost, a longer turn budget with progress nudges) and added a compute reallocation rule (stop games stalled after their first level).
 
-1. **The binding constraint is LLM calls, not actions.** Every game-run hit the wall budget with only ~55 LLM calls (~142 s each). On levels it did complete, the agent was as action-efficient as humans (median 0.82–0.88× the baseline). 61–64% of all time went to the last, never-solved level.
-2. **Stale terminal state.** After a game over, the harness auto-resets the level, but the next prompt still said "The game is over." (207 prompts) while the system prompt says to stop acting on game over. In one run of dc22 the model idled for 28 turns (65 minutes, half its budget).
-3. **Invisible mechanics.** The harness kept only the last frame of each action. In sp80, SPACE pours liquid through deflectors and the board reverts when the pour fails; the model only ever saw a timer tick and concluded "SPACE is a no-op" (0 levels in both runs). A random-play probe showed animation-only effects in 12 of 25 games.
-4. **Lost memory.** The note parser matched only the literal prefix `World model:`; the model mostly wrote `World model (revised):` or `World model v12:`, so ~70% of its notes were dropped and the carried model was empty on 47–49% of turns. Notes were also wiped on every level transition and game over.
-5. **Context mis-budgeting.** The token estimator counted each attached board image by its base64 length (~2.5k "tokens" instead of ~100 real vision tokens), so the 32k window held only ~8 recent calls. A 60 s turn budget, shorter than one LLM call, ended almost every turn after one tool call and re-sent the full user prompt.
-
-## 4. Fixes
-
-All fixes are harness-only and game-agnostic.
-
-| Fix | Mechanism | Targets |
-|---|---|---|
-| Truthful terminal state | After an auto-reset, clear `game_over` in the carried summary and action result; tell the model the level restarted and ask it to name the cause of the loss | Idle loops after game over |
-| Animation evidence | For every action, diff all intermediate frames against the pre-action board; report transient cells, their bounding box, and whether the board reverted | Mechanics that are only visible mid-animation |
-| Robust note parsing | Accept markdown and qualified headers (`**World model (revised):**`, `v12`, `update`) | Memory loss |
-| Knowledge carry-over | On a level transition keep the action model and the goal that worked, plus the last actions that completed the level, as cross-level notes; on game over keep the models and flag the failed plan | Re-learning each level |
-| Context budget | Count images at a fixed vision-token cost; keep only the newest image in history | Short effective memory |
-| Turn budget and nudges (v2) | Yield only after ≥420 s; prompt after ≥3 non-acting turns and after ≥50 actions on a level to enumerate untested win hypotheses | Analysis loops, stuck levels |
-| Compute reallocation (v5) | A game that completed a level but then made no progress for 75 min stops, freeing GPU share for games still progressing; a recently progressing game may run past its budget (≤1.6×) while the run is ahead of the original worst-case schedule | 61–64% of time spent on never-solved levels |
-
-Every change is covered by unit checks and an offline smoke test against a mock LLM server.
-
-## 5. Results
-
-Public games, same model, sampling and budget as the reference runs. Identical code varies by about ±1 point between runs (v2 twice: 8.04 and 6.77), so we report every run.
-
-| Run | Mean score | Levels | Games with 0 levels |
+| Run (public 25 games) | Mean | Levels | 0-level games |
 |---|---|---|---|
-| Public Duck, run A | 5.78 | 35 | 5 |
-| Public Duck, run B | 6.76 | 36 | 6 |
+| Public Duck, runs A / B | 5.78 / 6.76 | 35 / 36 | 5 / 6 |
 | Ours v1 (fidelity fixes) | 6.25 | 33 | 5 |
-| Ours v2 (v1 + turn budget + stuck nudges), run 1 | 8.04 | 40 | 4 |
-| Ours v2, run 2 | 6.77 | 36 | 5 |
-| Ours v3 (v2 + keep reasoning only for newest turn) | 5.71 | 31 | 6 |
-| Ours v4 (v2 + stall preemption at 75 min) | 7.02 | 30 | 8 |
-| Ours v5 (v2 + preemption only after the first level), run 1 | 10.34 | 44 | 3 |
-| Ours v5, run 2 | 7.35 | 39 | 2 |
+| Ours v2 (+ turn budget, nudges), 2 runs | 8.04 / 6.77 | 40 / 36 | 4 / 5 |
+| Ours v3 (+ drop past reasoning) | 5.71 | 31 | 6 |
+| Ours v4 (+ stall stop at 75 min) | 7.02 | 30 | 8 |
+| Ours v5 (stall stop only after level 1), 2 runs | 10.34 / 7.35 | 44 / 39 | 3 / 2 |
 
 ![Levels completed per game](figures/levels_per_game.png)
 
-Leaderboard (hidden games): v1 3.42, v2 3.66 (reference forks of the public Duck cluster at 3–5).
+Robust per-game effects: sp80, tn36 and dc22 complete levels in every one of our runs and in no reference run; in sp80/tn36 the new animation evidence appears in 23 and 26 prompts. Negative results: dropping past reasoning from history (v3) lost continuity; a blanket stall stop (v4) killed slow first levels.
 
-What is robust across runs: sp80, tn36 and dc22 complete at least one level in every run of v1–v4 and never in the references. In sp80 and tn36 the new animation evidence was shown in 23 and 26 prompts respectively; in dc22 the model no longer idles on a false "game over". What is not robust: the aggregate, which single runs cannot resolve.
+## 4. Part II — Why it did not show on the leaderboard
 
-Negative results. (i) Dropping past hidden reasoning from the carried history (v3) freed context but lowered the score: the model loses continuity of its own hypotheses. (ii) Stopping games after 75 minutes without progress (v4) freed GPU share, which let sk48 complete its first level for the first time, but also killed slow first levels (sc25, cn04, cd82). Restricting preemption to games that had already completed a level (v5) keeps the benefit without the cost: it is our best configuration, averaging 8.85 over two runs (vs 7.41 for v2 and 6.27 for the reference), with g50t completing a level for the first time in any run.
+| Version | Public-25 mean | Hidden LB |
+|---|---|---|
+| v1 | 6.25 | 3.42 |
+| v2 | 7.41 (2 runs) | 3.66 |
+| v5 | 8.85 (2 runs) | 2.53 |
+| v6 (v5, extensions off) | — | 3.33 |
+| v6 + fine-tuned model (Swift 1.5) | 7.32 | 2.23 |
 
-## 6. Why it works
+All harness versions sit within the leaderboard's run-to-run noise, and the ordering is not preserved. Two causes are visible in our data. First, the public evaluation runs 25 games in one wave while the hidden run plays 110 in four, so scheduling rules behave differently (v5's progress extensions never fired offline and lengthened waves online). Second, both evaluations are small samples of a high-variance process (±1.5 public, ±0.5 LB at this score level). The practical lesson for anyone with one submission a day: a harness change needs either a mechanism visible in transcripts (as in §3) or many runs, and a single offline run selects noise.
 
-The Duck's model is competent once it has the right evidence: on the levels it completes it matches human action counts. Its failures concentrate where the harness breaks the observation–memory loop: it cannot learn a mechanic it never observes (animation frames), cannot keep a hypothesis it is not allowed to remember (dropped notes, wiped models, a context full of stale images), and cannot act when the environment description is false (stale game over). These are failures of *state fidelity*, and they compound over a long episode because every later hypothesis is built on corrupted evidence. Fixing fidelity is cheap, it makes no assumptions about particular games, and it transfers to any agent that interacts with an environment through a harness — including coding agents, where the equivalent defects are truncated tool output, stale build state and lost scratch notes.
+## 5. Part III — Reliability at the top
 
-## 7. Limitations and next steps
+On 30 September Franzen published his Milestone-2 solution (LB 27.24): the same Duck lineage with a ~5k-line harness patch, a 4-bit Intel AutoRound quantisation served by an SGLang fork with MTP speculative decoding, a 128k context with the structured memory removed, and a priority scheduler over all 110 games. It already contains equivalents of our §3 fixes. We forked it (credited; unchanged otherwise) and scored **29.28** (rank 59 of 3,585), in a cluster of forks spanning ~26–32.
 
-Two runs per configuration cannot give tight confidence intervals; we report per-game mechanism evidence alongside aggregates. Remaining failures are genuine reasoning gaps (sk48's undo, bp35's physics). Next: expose intermediate frames as Python objects and improve serving throughput.
+Resubmitting the identical notebook scored **0.00**. Our own test run started in the same hour logged a weight load of **1,779 s** versus 321 s two days earlier. The notebook releases games after 12 minutes so that the gateway sees activity, and each game's first request retries for at most 900 s; with a ~35-minute server start, every game exhausted its retries and played nothing. We also found that one more speculative step (a natural throughput knob) is rejected outright by the model's sparse-attention kernel (`draft tokens ≤ 4`), so throughput is already at the configuration's limit.
+
+Fix: extend the first-request grace to 3,600 s. It costs nothing when the server is fast — the grace applies only while the first request fails — and covers loads up to ~70 minutes. **[TBD: LB of hardened version, and number of reruns without a zero.]** Because the final ranking reruns the selected notebook on private games, a zero from infrastructure is the single largest expected loss for any team in this cluster, larger than any harness tweak we measured.
+
+## 6. Discussion
+
+The same lesson appears at both ends of the leaderboard. At 3 points, the agent fails because the harness tells the model false things about its world; at 29 points, it fails because the harness assumes the infrastructure behaves the same twice. In both cases the model is not the bottleneck, the defects are invisible in aggregate scores, and they are found only by reading logs and transcripts against ground truth. We think this generalises to any tool-using agent: audit what the model is shown and what the harness assumes before tuning prompts or models.
+
+## 7. Limitations
+
+Few runs per configuration; per-game mechanism evidence is our main support. The 0.00 diagnosis is inferred from a concurrent test run, since competition rerun logs are not visible to participants. The Franzen-based results reuse another team's work, credited above; our contributions are the audit, the transfer analysis and the reliability fix.
 
 ## Acknowledgements
 
-Built on the Duck harness by Tufa Labs (MIT) and the public Qwen 3.8 serving setup shared by Kaggle community members.
+Tufa Labs (Duck harness, MIT); Daniel Franzen (Milestone-2 solution); Intel, Albucino and the Pennyroyal SGLang contributors; the Qwen team.
