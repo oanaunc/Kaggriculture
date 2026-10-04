@@ -73,3 +73,4 @@ Public-25 gains do not transfer measurably to the hidden LB games; LB run-to-run
 - **Fix (our change #1, kernel v2):** ARC3_HTTP_RETRY_INITIAL_SECONDS 900 -> 3600. No effect when the server is fast (grace only applies while the first request fails); survives loads up to ~70 min. Pushed v2 (demo run in progress). This also protects against the same failure in the final private rerun, which matters more than any LB tweak.
 - v2 demo run (grace 3600 s): COMPLETE, mean 54.21 (v1 demo 46.32; same config otherwise -> noise), 3 games won, no zero-level game, 0 tracebacks, weight load 360 s, 564 gen tok/s. Clean -> tonight's submission (-v 2).
 - 2026-10-04 00:14: submitted fork v2 to LB.
+- **fork v2 LB = 24.24** (v1: 29.28, 0.00). Within the fork spread; v2 is the safe final candidate (no zero-on-slow-load).
