@@ -204,3 +204,4 @@ It is not a big accuracy jump. The credible accuracy levers from the scouting re
 | 2026-10-01 | v1 resubmit | - | (see API) | pending (variance measurement) |
 | 2026-10-01 | v1 resubmit (kgmon) | 28.06 | LB rerun noise ≈ ±0.5 (28.61 vs 28.06); selector v2 (25.97) is a real loss |
 | 2026-10-04 | original perfpatch fork (oanaunciuleanu/arc2-perfpatch-ours v1), unchanged | pending | tests whether our v1 hardening cost ~3 pts (public forks of the original avg ~31.8). Smoke 2.5/4. |
+| 2026-10-05 | original perfpatch fork result | **28.06** | identical to our v1 rerun (28.06); our hardening did NOT cost points. The 33.89 public score was a lucky draw. ARC2 pipeline is saturated at ~28-29 for us. |
