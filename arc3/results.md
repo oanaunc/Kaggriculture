@@ -78,3 +78,4 @@ Public-25 gains do not transfer measurably to the hidden LB games; LB run-to-run
 - D' candidate `oanaunciuleanu/arc3-franzen-cand` v1 demo: COMPLETE, mean 53.38 (v2 54.21, v1 46.32), no zero-action game, `#OURS_FORM ok`, load 290 s, 0 tracebacks. **-> 2026-10-05 00:12 ARC3 submission: `-k oanaunciuleanu/arc3-franzen-cand -v 1`.**
 - 2026-10-05 00:14: submitted arc3-franzen-cand v1 (D').
 - **D' candidate LB = 26.36** (fork v1 29.28/0.00, v2 24.24). Within noise; no evidence D' helps. Final candidate remains a 3600 s-grace version.
+- s10g25 (10 streams, all 25 public games, 25 min): mean 5.63, 885 actions, 498 gen tok/s job, decode 679 tok/s, mean running 8.8. s12g25 pushed 2026-10-05 ~20:00 for comparison.
