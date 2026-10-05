@@ -238,3 +238,5 @@ The v1 extras are not carried over. v1 bundled all of them and scored half of R1
 - 2026-10-04: submitted cand2 (hsiaosuan 2-stage bundle + thinking ON). See gemma/scout_2026-10-04.md.
 - 2026-10-05: submitted cand1 (same bundle, thinking OFF) as control for cand2. ARC3 cand (D') submitted 00:14.
 - **cand2 (2-stage, thinking ON) = 0.08; cand1 (same, thinking OFF) = 0.13** (new best by 1 task over 0.12). Thinking-on does not help (likely hurts: longer turns within the 5-min cap). Next: offline evaluation on public tasks to escape ±0.04 LB noise.
+- **Offline eval cand1, 40 public tasks: 10/40 (25%).** Failures: tests fail 11, wrong patch 10, no patch 6 (3 at 60-call cap), timeout 2, error 1. ~11 failures are pytest *collection* errors: hidden tests import a new name the issue asks for, which the agent never created. Several tasks end at 59-60 tool calls.
+- Launched paired 40-task evals: cand3 = caps 100 calls/7 min/140 turns; cand4 = cand3 + prompt rule (create requested public names exactly; import check after edit).
