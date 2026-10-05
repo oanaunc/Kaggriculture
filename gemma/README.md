@@ -236,3 +236,4 @@ The v1 extras are not carried over. v1 bundled all of them and scored half of R1
 - 2026-10-03: resubmitted r12base unchanged to measure run-to-run noise of the 0.12 base.
 - r12base rerun = **0.08** (first run 0.12). Same zip -> LB noise ≈ ±0.04 (~2 tasks). So v2/v3/v4 (0.08) are NOT shown to be worse than the base; all our Gemma variants are within noise.
 - 2026-10-04: submitted cand2 (hsiaosuan 2-stage bundle + thinking ON). See gemma/scout_2026-10-04.md.
+- 2026-10-05: submitted cand1 (same bundle, thinking OFF) as control for cand2. ARC3 cand (D') submitted 00:14.

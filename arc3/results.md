@@ -76,3 +76,4 @@ Public-25 gains do not transfer measurably to the hidden LB games; LB run-to-run
 - **fork v2 LB = 24.24** (v1: 29.28, 0.00). Within the fork spread; v2 is the safe final candidate (no zero-on-slow-load).
 - 2026-10-04 scout (arc3/scout_2026-10-04.md): teams at 32-37 are mostly lucky Franzen draws (first-draw mean 25.8, SD 3.9). Only evidenced change: shiiin9 D' slot priority (31.54 vs 27.62 same account, 1 draw).
 - D' candidate `oanaunciuleanu/arc3-franzen-cand` v1 demo: COMPLETE, mean 53.38 (v2 54.21, v1 46.32), no zero-action game, `#OURS_FORM ok`, load 290 s, 0 tracebacks. **-> 2026-10-05 00:12 ARC3 submission: `-k oanaunciuleanu/arc3-franzen-cand -v 1`.**
+- 2026-10-05 00:14: submitted arc3-franzen-cand v1 (D').
