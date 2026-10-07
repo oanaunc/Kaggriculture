@@ -1,0 +1,6 @@
+name: verify_loop
+agent_class: LoopAgent
+description: Up to two verify passes; a pass that calls submit_patch and replies ends the session.
+max_iterations: 2
+sub_agents:
+  - config_path: verifier.yaml

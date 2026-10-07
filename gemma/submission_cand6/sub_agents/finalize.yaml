@@ -1,0 +1,9 @@
+name: finalize
+model: gemma-4-31b-it-qat-w4a16-ct
+description: Submit the current working tree when the verify loop ended without a submission.
+instruction: !include ../prompts/finalize.md
+generate_content_config: !include ../configs/explore_sampling.yaml
+include_contents: none
+tools:
+  - get_status
+  - submit_patch

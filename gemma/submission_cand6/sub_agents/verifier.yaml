@@ -1,0 +1,13 @@
+name: verifier
+model: gemma-4-31b-it-qat-w4a16-ct
+description: Run the existing targeted tests on the coder's diff, fix one regression if needed, and submit.
+instruction: !include ../prompts/verify.md
+generate_content_config: !include ../configs/sampling.yaml
+include_contents: none
+output_key: verify_report
+tools:
+  - run_command
+  - read_file
+  - edit_file
+  - get_status
+  - submit_patch

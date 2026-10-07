@@ -1,0 +1,8 @@
+name: swe_workflow
+agent_class: SequentialAgent
+description: Read-only localization and plan, a coder that edits and checks, a bounded verify-and-retry loop that runs existing tests and submits, and a submit fallback.
+sub_agents:
+  - config_path: sub_agents/explore.yaml
+  - config_path: sub_agents/coder.yaml
+  - config_path: sub_agents/verify_loop.yaml
+  - config_path: sub_agents/finalize.yaml
