@@ -87,3 +87,4 @@ Public-25 gains do not transfer measurably to the hidden LB games; LB run-to-run
 - Pushed franzen_fork **v4** = Franzen + 3600 s startup grace + full input-path resolver (datasets, models, competition wheels). Next ARC3 submission and final candidate once its demo run is clean.
 - fork **v4** demo: COMPLETE, mean 51.63, no zero-action game, 0 tracebacks, 587 tok/s. **v4 = ARC3 final candidate. Submit at 2026-10-07 00:12: `kaggle competitions submit arc-prize-2026-arc-agi-3 -k oanaunciuleanu/arc3-franzen-ours -v 4 -f submission.parquet`**
 - 2026-10-07 00:14: submitted fork v4 to LB.
+- **fork v4 LB = 28.08** (v1 29.28/0.00, v2 24.24, D' 26.36). Within the fork spread; v4 is the robust final candidate. Ranks 2026-10-07: ARC3 321, ARC2 1268, Gemma 267.
