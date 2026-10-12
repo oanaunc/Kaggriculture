@@ -89,3 +89,4 @@ Public-25 gains do not transfer measurably to the hidden LB games; LB run-to-run
 - 2026-10-07 00:14: submitted fork v4 to LB.
 - **fork v4 LB = 28.08** (v1 29.28/0.00, v2 24.24, D' 26.36). Within the fork spread; v4 is the robust final candidate. Ranks 2026-10-07: ARC3 321, ARC2 1268, Gemma 267.
 - 2026-10-09: no new validated versions; no submissions on 10-08/10-09. Ranks: ARC3 396, ARC2 1320, Gemma 355. GPU 8.1h left until 10-10 reset.
+- 2026-10-12: daily cycle — no new validated versions, no submissions. GPU 30h available (next reset 10-17). Waiting on user choice (Gemma paper vs LoRA).
