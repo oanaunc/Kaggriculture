@@ -249,3 +249,4 @@ The v1 extras are not carried over. v1 bundled all of them and scored half of R1
 - **cand6 (cand1 + LoopAgent verifier: run existing tests, retry once, finalize) = 8/40.** vs cand1 runs 10 and 7: within noise (McNemar p=0.69 / 1.0). The verification loop eats the 5-min/60-call budget: tool-cap no-patch 6 (cand1: 3-4), timeouts 5 (cand1: 2-4). Not adopted. Conclusion for the paper: with this model and these caps, neither prompt/budget tuning nor test-based retry moves the resolve rate beyond run-to-run noise (8 offline runs, 6.0–10/40 band).
 - 2026-10-12: daily cycle — no submission (no config beats cand1 0.13 beyond noise). Paper draft at papers/gemma/writeup.md.
 - 2026-10-13: daily cycle — no submission.
+- 2026-10-14: daily cycle — no submission.
