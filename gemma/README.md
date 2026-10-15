@@ -250,3 +250,4 @@ The v1 extras are not carried over. v1 bundled all of them and scored half of R1
 - 2026-10-12: daily cycle — no submission (no config beats cand1 0.13 beyond noise). Paper draft at papers/gemma/writeup.md.
 - 2026-10-13: daily cycle — no submission.
 - 2026-10-14: daily cycle — no submission.
+- 2026-10-15: daily cycle — no submission.
