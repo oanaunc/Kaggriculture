@@ -253,3 +253,4 @@ The v1 extras are not carried over. v1 bundled all of them and scored half of R1
 - 2026-10-15: daily cycle — no submission.
 - 2026-10-16: daily cycle — no submission.
 - 2026-10-17: daily cycle — no submission.
+- 2026-10-18: daily cycle — no submission.
